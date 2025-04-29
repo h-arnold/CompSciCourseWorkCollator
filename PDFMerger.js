@@ -144,4 +144,187 @@ class PDFMerger {
       };
     }
   }
+  
+  /**
+   * Gets prefixes from the Google Sheet and merges PDFs based on column groups
+   * @param {string} sourceFolderId - ID of the folder containing the PDFs to merge
+   * @param {string} [outputFolderId=null] - Optional folder ID to save the merged PDFs (if null, saves to root)
+   * @param {boolean} [recursive=false] - Whether to search in subfolders recursively
+   * @returns {Promise<Object>} Object with results of the merge operations
+   */
+  static async mergePDFsFromPrefixSheet(sourceFolderId, outputFolderId = null, recursive = false) {
+    try {
+      // Get the Prefixes sheet
+      const { prefixSheet } = SpreadsheetManager.getSpreadsheetSheets();
+      if (!prefixSheet) {
+        return {
+          success: false,
+          message: "Prefixes sheet not found."
+        };
+      }
+      
+      // Get all data from the sheet
+      const data = prefixSheet.getDataRange().getValues();
+      if (data.length < 2) {
+        return {
+          success: false,
+          message: "Prefixes sheet is empty or has only headers."
+        };
+      }
+      
+      const headers = data[0];
+      const results = [];
+      
+      // Process each column (category)
+      for (let col = 0; col < headers.length; col++) {
+        if (!headers[col]) continue; // Skip columns with no header
+        
+        // Collect all non-empty prefixes for this column
+        const prefixes = [];
+        for (let row = 1; row < data.length; row++) {
+          if (data[row][col] && data[row][col].toString().trim()) {
+            prefixes.push(data[row][col].toString().trim());
+          }
+        }
+        
+        if (prefixes.length === 0) continue; // Skip if no prefixes for this category
+        
+        // Generate output filename from the header
+        const outputFileName = `${headers[col]}.pdf`;
+        console.log(`Processing category "${headers[col]}" with prefixes: ${prefixes.join(', ')}`);
+        
+        // Find all files matching these prefixes
+        const fileIds = DriveManager.getFileIdsByPrefix(
+          sourceFolderId, 
+          prefixes,
+          recursive, 
+          ["application/pdf"]
+        );
+        
+        if (fileIds.length === 0) {
+          results.push({
+            category: headers[col],
+            success: false,
+            message: "No matching PDF files found for this category."
+          });
+          continue;
+        }
+        
+        // Merge PDFs for this category
+        const mergeResult = await this.mergePDFs(fileIds, outputFileName, outputFolderId);
+        
+        // Store the result with category info
+        results.push({
+          category: headers[col],
+          ...mergeResult
+        });
+      }
+      
+      return {
+        success: true,
+        message: `Processed ${results.length} categories from the prefixes sheet.`,
+        results
+      };
+    } catch (e) {
+      console.error(`Error merging PDFs from prefix sheet: ${e.message}`);
+      return {
+        success: false,
+        message: `Error merging PDFs from prefix sheet: ${e.message}`
+      };
+    }
+  }
+  
+  /**
+   * Merges PDFs for each student folder based on the prefix sheet
+   * @param {boolean} [recursive=false] - Whether to search in subfolders recursively
+   * @returns {Promise<Object>} Object with results of the merge operations for each student
+   */
+  static async mergePDFsForAllStudents(recursive = false) {
+    try {
+      // Get the Student Info sheet
+      const { studentSheet } = SpreadsheetManager.getSpreadsheetSheets();
+      if (!studentSheet) {
+        return {
+          success: false,
+          message: "Student Info sheet not found."
+        };
+      }
+      
+      // Get all data from the Student Info sheet
+      const data = studentSheet.getDataRange().getValues();
+      if (data.length < 2) {
+        return {
+          success: false,
+          message: "Student Info sheet is empty or has only headers."
+        };
+      }
+      
+      const headers = data[0];
+      const folderIdColumnIndex = headers.findIndex(header => header.toLowerCase().includes("folder")) || 2; // Default to 3rd column (index 2)
+      const nameColumnIndex = 0; // Assume name is in the first column
+      
+      const studentResults = [];
+      
+      // Process each student row (skip header row)
+      for (let row = 1; row < data.length; row++) {
+        const studentName = data[row][nameColumnIndex];
+        const sourceFolderId = data[row][folderIdColumnIndex];
+        
+        if (!sourceFolderId) {
+          studentResults.push({
+            student: studentName || `Row ${row + 1}`,
+            success: false,
+            message: "No folder ID found for this student."
+          });
+          continue;
+        }
+        
+        try {
+          // Get the source folder
+          const sourceFolder = DriveApp.getFolderById(sourceFolderId);
+          
+          // Create a "MergedPDFs" subfolder
+          const mergedPDFsFolder = DriveManager.createFolder(sourceFolder, "MergedPDFs");
+          const outputFolderId = mergedPDFsFolder.getId();
+          
+          console.log(`Processing student: ${studentName}, creating merged PDFs in folder: ${outputFolderId}`);
+          
+          // Run the merge operation for this student's folder
+          const mergeResult = await this.mergePDFsFromPrefixSheet(
+            sourceFolderId,
+            outputFolderId,
+            recursive
+          );
+          
+          // Store the result with student info
+          studentResults.push({
+            student: studentName,
+            sourceFolderId,
+            outputFolderId,
+            ...mergeResult
+          });
+          
+        } catch (e) {
+          console.error(`Error processing student ${studentName}: ${e.message}`);
+          studentResults.push({
+            student: studentName,
+            success: false,
+            message: `Error: ${e.message}`
+          });
+        }
+      }
+      
+      return {
+        success: true,
+        message: `Processed PDF merges for ${studentResults.length} students.`,
+        studentResults
+      };
+    } catch (e) {
+      console.error(`Error merging PDFs for students: ${e.message}`);
+      return {
+        success: false,
+        message: `Error merging PDFs for students: ${e.message}`
+      };
+    }
+  }
 }

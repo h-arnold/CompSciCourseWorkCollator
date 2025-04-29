@@ -11,6 +11,7 @@ class UIManager {
       .addItem("1. Get names and IDs", "runScript")
       .addItem("2. Copy marksheets and declarations", "populateFoldersWithTemplates")
       .addItem("3. Copy coursework submissions", "populateFolders")
+      .addItem("4. Merge PDFs for all students", "mergeAllStudentPDFs")
       .addToUi();
   }
   
@@ -276,4 +277,40 @@ function populateFolders() {
 function populateFoldersWithTemplates() {
   const folderPopulator = new FolderPopulator();
   folderPopulator.populateFoldersWithTemplates();
+}
+
+/**
+ * Entry point function for merging PDFs for all students
+ * Displays a prompt to allow selection of recursive folder scanning
+ */
+async function mergeAllStudentPDFs() {
+  const ui = SpreadsheetApp.getUi();
+  const response = ui.alert(
+    'Merge PDFs for all students',
+    'Do you want to include PDFs from subfolders in the search?',
+    ui.ButtonSet.YES_NO_CANCEL);
+  
+  if (response == ui.Button.CANCEL) {
+    ui.alert('Operation cancelled.');
+    return;
+  }
+  
+  const recursive = (response == ui.Button.YES);
+  
+  // Show a loading message
+  ui.alert('Starting PDF merge process for all students. This may take some time.');
+  
+  try {
+    // Run the merge operation
+    const result = await PDFMerger.mergePDFsForAllStudents(recursive);
+    
+    // Show results to the user
+    if (result.success) {
+      ui.alert('Success', `${result.message}\n\nProcessed ${result.studentResults.length} students.`, ui.ButtonSet.OK);
+    } else {
+      ui.alert('Error', result.message, ui.ButtonSet.OK);
+    }
+  } catch (e) {
+    ui.alert('Error', `An error occurred: ${e.message}`, ui.ButtonSet.OK);
+  }
 }

@@ -30,6 +30,6 @@ class SpreadsheetManager {
     const studentSheet = spreadsheet.getSheetByName("Student Info") || spreadsheet.insertSheet("Student Info");
     const courseSheet = spreadsheet.getSheetByName("Course Info") || spreadsheet.insertSheet("Course Info");
     const prefixSheet = spreadsheet.getSheetByName("Prefixes") || spreadsheet.insertSheet("Prefixes");
-    return { studentSheet, courseSheet };
+    return { studentSheet, courseSheet, prefixSheet };
   }
 }
