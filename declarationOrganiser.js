@@ -1,34 +1,4 @@
 /**
- * Class responsible for Google Drive file operations
- * TODO: Merge this with DriveManager
- */
-class DriveFileManager {
-  /**
-   * Copies and renames a Drive file
-   * @param {string} driveFileId - The ID of the Drive file
-   * @param {string} folderId - The ID of the folder where the file will be copied
-   * @param {string} newFileName - The name of the file
-   */
-  copyAndRenameFile(driveFileId, folderId, newFileName) {
-    const driveFile = DriveApp.getFileById(driveFileId);
-    const folder = DriveApp.getFolderById(folderId);
-    driveFile.makeCopy(newFileName, folder);
-  }
-  
-  /**
-   * Converts a Google Docs file to a PDF
-   * @param {string} driveFileId - The ID of the Drive file
-   * @return {File} The converted PDF file
-   */
-  convertToPdf(driveFileId) {
-    const driveFile = DriveApp.getFileById(driveFileId);
-    const blob = driveFile.getAs('application/pdf');
-    const pdfFile = DriveApp.createFile(blob);
-    return pdfFile;
-  }
-}
-
-/**
  * Class responsible for text extraction and formatting
  */
 class TextProcessor {
@@ -81,9 +51,9 @@ class TextProcessor {
  */
 class DeclarationProcessor {
   constructor() {
-    this.driveManager = new DriveFileManager();
     this.textProcessor = new TextProcessor();
-    // ClassroomManager is now a global class with static methods
+    // ClassroomManager is a global class with static methods
+    // DriveManager is now also being used with static methods
   }
   
   /**
@@ -134,10 +104,10 @@ class DeclarationProcessor {
     
     if (CandidateNo && CentreNo) {
       console.log(`Candidate number ${CandidateNo} and Centre number ${CentreNo} found in document.`);
-      const pdfFile = this.driveManager.convertToPdf(driveFileId);
+      const pdfFile = DriveManager.convertToPdf(driveFileId);
       const pdfFileId = pdfFile.getId();
       const newFileName = this.textProcessor.createFileName(CentreNo, CandidateNo, name);
-      this.driveManager.copyAndRenameFile(pdfFileId, folderId, newFileName);
+      DriveManager.copyAndRenameFile(pdfFileId, folderId, newFileName);
       console.log(`${name}'s document has been moved and converted to PDF.`);
     }
   }

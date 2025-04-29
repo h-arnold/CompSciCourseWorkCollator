@@ -176,6 +176,30 @@ class DriveManager {
     }
     
     /**
+     * Copies and renames a Drive file
+     * @param {string} driveFileId - The ID of the Drive file
+     * @param {string} folderId - The ID of the folder where the file will be copied
+     * @param {string} newFileName - The name of the file
+     */
+    static copyAndRenameFile(driveFileId, folderId, newFileName) {
+      const driveFile = DriveApp.getFileById(driveFileId);
+      const folder = DriveApp.getFolderById(folderId);
+      driveFile.makeCopy(newFileName, folder);
+    }
+    
+    /**
+     * Converts a Google Docs file to a PDF
+     * @param {string} driveFileId - The ID of the Drive file
+     * @return {File} The converted PDF file
+     */
+    static convertToPdf(driveFileId) {
+      const driveFile = DriveApp.getFileById(driveFileId);
+      const blob = driveFile.getAs('application/pdf');
+      const pdfFile = DriveApp.createFile(blob);
+      return pdfFile;
+    }
+    
+    /**
      * Gets just the file IDs from a folder where filenames start with specified substrings
      * @param {string|Folder} folderIdOrFolder - The folder ID or Folder object to search in
      * @param {string|string[]} startsWithPrefixes - A single substring or array of substrings to match at the beginning of file names
