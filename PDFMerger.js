@@ -271,11 +271,12 @@ class PDFMerger {
         console.log(`Processing category "${headers[col]}" with prefixes: ${prefixes.join(', ')}`);
         
         // Find all files matching these prefixes
-        const fileIds = DriveManager.getFileIdsByPrefix(
+        const fileIds = DriveManager.getFileIdsBySubstring(
           sourceFolderId, 
           prefixes,
           recursive, 
-          ["application/pdf"]
+          ["application/pdf"],
+          'prefix'  // We're still using prefix matching as before
         );
         
         if (fileIds.length === 0) {

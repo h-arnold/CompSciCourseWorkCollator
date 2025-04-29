@@ -133,21 +133,22 @@ class DriveManager {
     }
     
     /**
-     * Finds files in a folder with names starting with specified substrings
+     * Finds files in a folder with names matching specified substrings
      * @param {string|Folder} folderIdOrFolder - The folder ID or Folder object to search in
-     * @param {string|string[]} startsWithPrefixes - A single substring or array of substrings to match at the beginning of file names
+     * @param {string|string[]} substrings - A single substring or array of substrings to match in file names
      * @param {boolean} [recursive=false] - Whether to search in subfolders recursively
      * @param {string[]} [mimeTypes=null] - Optional array of MIME types to filter by (e.g., ["application/pdf"])
+     * @param {string} [searchType='prefix'] - Type of search: 'prefix', 'suffix', or 'contains'
      * @returns {Object[]} Array of objects with file information {id, name, mimeType, url}
      */
-    static findFilesByPrefix(folderIdOrFolder, startsWithPrefixes, recursive = false, mimeTypes = null) {
+    static findFilesBySubstring(folderIdOrFolder, substrings, recursive = false, mimeTypes = null, searchType = 'prefix') {
       try {
         const folder = (typeof folderIdOrFolder === 'string') 
           ? DriveApp.getFolderById(folderIdOrFolder) 
           : folderIdOrFolder;
             
         // Convert single string to array for consistent handling
-        const prefixes = Array.isArray(startsWithPrefixes) ? startsWithPrefixes : [startsWithPrefixes];
+        const substringArray = Array.isArray(substrings) ? substrings : [substrings];
         
         const matchingFiles = [];
         
@@ -175,13 +176,28 @@ class DriveManager {
         // Get all files from the folder (and subfolders if recursive)
         const allFiles = getAllFiles(folder);
         
-        // Process each prefix in the order they were provided
-        for (const prefix of prefixes) {
-          // For each file, check if it starts with the current prefix
+        // Process each substring in the order they were provided
+        for (const substring of substringArray) {
+          // For each file, check if it matches according to the search type
           for (const file of allFiles) {
             const fileName = file.getName();
+            let isMatch = false;
             
-            if (fileName.startsWith(prefix)) {
+            // Determine if the file name matches based on the search type
+            switch (searchType.toLowerCase()) {
+              case 'prefix':
+                isMatch = fileName.startsWith(substring);
+                break;
+              case 'suffix':
+                isMatch = fileName.endsWith(substring);
+                break;
+              case 'contains':
+              default:
+                isMatch = fileName.includes(substring);
+                break;
+            }
+            
+            if (isMatch) {
               // If mimeTypes is provided, check if the file's mimeType matches any in the array
               if (!mimeTypes || mimeTypes.includes(file.getMimeType())) {
                 // Check if this file has already been added to avoid duplicates
@@ -201,9 +217,17 @@ class DriveManager {
         
         return matchingFiles;
       } catch (e) {
-        console.error(`Error finding files by prefix: ${e.message}`);
+        console.error(`Error finding files by substring: ${e.message}`);
         return [];
       }
+    }
+    
+    // For backward compatibility
+    /**
+     * @deprecated Use findFilesBySubstring with searchType='prefix' instead
+     */
+    static findFilesByPrefix(folderIdOrFolder, startsWithPrefixes, recursive = false, mimeTypes = null) {
+      return this.findFilesBySubstring(folderIdOrFolder, startsWithPrefixes, recursive, mimeTypes, 'prefix');
     }
     
     /**
@@ -237,15 +261,24 @@ class DriveManager {
     }
     
     /**
-     * Gets just the file IDs from a folder where filenames start with specified substrings
+     * Gets just the file IDs from a folder where filenames match specified substrings
      * @param {string|Folder} folderIdOrFolder - The folder ID or Folder object to search in
-     * @param {string|string[]} startsWithPrefixes - A single substring or array of substrings to match at the beginning of file names
+     * @param {string|string[]} substrings - A single substring or array of substrings to match in file names
      * @param {boolean} [recursive=false] - Whether to search in subfolders recursively
      * @param {string[]} [mimeTypes=null] - Optional array of MIME types to filter by
+     * @param {string} [searchType='prefix'] - Type of search: 'prefix', 'suffix', or 'contains'
      * @returns {string[]} Array of file IDs
      */
-    static getFileIdsByPrefix(folderIdOrFolder, startsWithPrefixes, recursive = false, mimeTypes = null) {
-      const files = this.findFilesByPrefix(folderIdOrFolder, startsWithPrefixes, recursive, mimeTypes);
+    static getFileIdsBySubstring(folderIdOrFolder, substrings, recursive = false, mimeTypes = null, searchType = 'prefix') {
+      const files = this.findFilesBySubstring(folderIdOrFolder, substrings, recursive, mimeTypes, searchType);
       return files.map(file => file.id);
+    }
+    
+    // For backward compatibility
+    /**
+     * @deprecated Use getFileIdsBySubstring with searchType='prefix' instead
+     */
+    static getFileIdsByPrefix(folderIdOrFolder, startsWithPrefixes, recursive = false, mimeTypes = null) {
+      return this.getFileIdsBySubstring(folderIdOrFolder, startsWithPrefixes, recursive, mimeTypes, 'prefix');
     }
   }
