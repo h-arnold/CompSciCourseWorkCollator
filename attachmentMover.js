@@ -140,9 +140,10 @@ function populateFolders() {
 /**
  * Processes the folder attachments for a Google Classroom assignment.
  *
- * For each submission, the function checks if any PDF files exist:
- *   - If PDF files are present, only these are copied to the student’s folder.
- *   - Otherwise, any Google Docs files are converted to PDF and then copied over.
+ * For each submission, the function checks for PDF, Google Docs, and Zip files:
+ *   - Any Zip files found are copied directly.
+ *   - If PDF files are present, only these are copied (in addition to any Zip files).
+ *   - If no PDF files are present, any Google Docs files are converted to PDF and then copied (in addition to any Zip files).
  *
  * @param {string} assignmentTitle - The title of the Google Classroom assignment.
  * @param {string} prependString - The string to prepend to the file attachments.
@@ -178,23 +179,43 @@ function processFolderAttachments(assignmentTitle, prependString, data) {
       const attachments = submission.assignmentSubmission.attachments || [];
       let pdfFiles = [];
       let googleDocsFiles = [];
+      let zipFiles = []; // Array to hold zip files
 
       attachments.forEach(attachment => {
         if (attachment.driveFile) {
-          const file = DriveApp.getFileById(attachment.driveFile.id);
-          if (isPdf(file)) {
-            pdfFiles.push(file);
-          } else if (isGoogleDoc(file)) {
-            googleDocsFiles.push(file);
+          try {
+            const file = DriveApp.getFileById(attachment.driveFile.id);
+            if (isPdf(file)) {
+              pdfFiles.push(file);
+            } else if (isGoogleDoc(file)) {
+              googleDocsFiles.push(file);
+            } else if (isZip(file)) { // Check for zip files
+              zipFiles.push(file);
+            }
+          } catch (e) {
+            console.error(`Error accessing file ID ${attachment.driveFile.id}: ${e.message}`);
+            // Optionally alert the user or log more details
+            // SpreadsheetApp.getUi().alert(`Error accessing file: ${e.message}. Please check permissions for file ID ${attachment.driveFile.id}`);
           }
         }
       });
 
-      const folder = DriveApp.getFolderById(folderId);
-      if (pdfFiles.length > 0) {
-        pdfFiles.forEach(file => copyFile(file, folder, prependString, name));
-      } else {
-        googleDocsFiles.forEach(file => copyGoogleDocAsPdf(file, folder, prependString, name));
+      try {
+        const folder = DriveApp.getFolderById(folderId);
+
+        // Always copy zip files if they exist
+        zipFiles.forEach(file => copyFile(file, folder, prependString, name));
+
+        // Then handle PDFs or Google Docs
+        if (pdfFiles.length > 0) {
+          pdfFiles.forEach(file => copyFile(file, folder, prependString, name));
+        } else if (googleDocsFiles.length > 0) { // Only process Google Docs if no PDFs were found
+          googleDocsFiles.forEach(file => copyGoogleDocAsPdf(file, folder, prependString, name));
+        }
+      } catch (e) {
+         console.error(`Error processing folder ID ${folderId} for user ${name}: ${e.message}`);
+         // Optionally alert the user
+         // SpreadsheetApp.getUi().alert(`Error processing folder for ${name}: ${e.message}`);
       }
     });
   });
@@ -203,7 +224,8 @@ function processFolderAttachments(assignmentTitle, prependString, data) {
 /**
  * Populates student folders with template files listed in the "Course Info" sheet.
  * The function retrieves the template file IDs and copies each file into each student's folder.
- * The new file names are prepended with the student's initials (first initial of first name and first two initials of surname).
+ * The new file names are prepended with the student's initials.
+ * Checks for existing files before copying.
  */
 function populateFoldersWithTemplates() {
   // Get the active spreadsheet and the relevant sheets
@@ -244,10 +266,14 @@ function populateFoldersWithTemplates() {
         const folder = DriveApp.getFolderById(folderId);
         // Create a new file name with the initials prepended
         const newFileName = `${initials}_${driveFile.getName()}`;
-        // Make a copy of the file in the student's folder with the new name
-        driveFile.makeCopy(newFileName, folder);
-        // Log the success message to the console
-        console.log(`Copied file ${driveFile.getName()} to ${folder.getName()} as ${newFileName}`);
+
+        // Check if the file should be copied (handles existing file prompt)
+        if (checkAndHandleExistingFile(folder, newFileName, name)) {
+          // Make a copy of the file in the student's folder with the new name
+          driveFile.makeCopy(newFileName, folder);
+          // Log the success message to the console
+          console.log(`Copied file ${driveFile.getName()} to ${folder.getName()} as ${newFileName}`);
+        }
       } catch (e) {
         // Log any errors encountered during the file copy process
         console.error(`Failed to copy file with ID ${templateFileId} to folder with ID ${folderId}: ${e.message}`);
@@ -257,6 +283,49 @@ function populateFoldersWithTemplates() {
 }
 
 /* Helper Functions */
+
+/**
+ * Checks if a file with the given name exists in the folder.
+ * If it exists, prompts the user whether to replace it.
+ * If replacement is chosen, trashes the existing file(s).
+ *
+ * @param {Folder} folder The folder to check within.
+ * @param {string} newFileName The name of the file to check for.
+ * @param {string} userName The name of the user (for the prompt message).
+ * @returns {boolean} True if the operation should proceed (file doesn't exist or user chose YES), false otherwise.
+ */
+function checkAndHandleExistingFile(folder, newFileName, userName) {
+  const existingFiles = folder.getFilesByName(newFileName);
+  if (existingFiles.hasNext()) {
+    const ui = SpreadsheetApp.getUi();
+    const response = ui.alert(
+      `File "${newFileName}" already exists in ${userName}'s folder. Replace?`,
+      ui.ButtonSet.YES_NO);
+
+    if (response == ui.Button.YES) {
+      // Remove existing file(s)
+      while (existingFiles.hasNext()) {
+        existingFiles.next().setTrashed(true); // Move to trash
+      }
+      console.log(`Existing file "${newFileName}" marked for replacement.`);
+      return true; // Proceed with operation
+    } else {
+      console.log(`Skipping replacement for existing file "${newFileName}".`);
+      return false; // Skip operation
+    }
+  }
+  return true; // File doesn't exist, proceed with operation
+}
+
+/**
+ * Checks if the provided file is a Zip archive.
+ *
+ * @param {File} file - The Drive file to check.
+ * @returns {boolean} True if the file's MIME type is application/x-zip-compressed.
+ */
+function isZip(file) {
+  return file.getMimeType() === "application/x-zip-compressed";
+}
 
 /**
  * Checks if the provided file is a PDF.
@@ -280,6 +349,7 @@ function isGoogleDoc(file) {
 
 /**
  * Copies the given file to the specified folder with a new name.
+ * Checks if a file with the same name exists and prompts the user for replacement using a helper function.
  *
  * @param {File} file - The Drive file to copy.
  * @param {Folder} folder - The destination folder.
@@ -288,12 +358,15 @@ function isGoogleDoc(file) {
  */
 function copyFile(file, folder, prependString, userName) {
   const newFileName = `${prependString}_${file.getName()}`;
-  file.makeCopy(newFileName, folder);
-  console.log(`${userName}'s document has been moved.`);
+  if (checkAndHandleExistingFile(folder, newFileName, userName)) {
+    file.makeCopy(newFileName, folder);
+    console.log(`${userName}'s document "${file.getName()}" copied as "${newFileName}".`);
+  }
 }
 
 /**
  * Converts a Google Docs file to PDF and copies it to the specified folder with a new name.
+ * Checks if a file with the same name exists and prompts the user for replacement using a helper function.
  *
  * @param {File} file - The Google Docs file to convert.
  * @param {Folder} folder - The destination folder.
@@ -304,6 +377,8 @@ function copyGoogleDocAsPdf(file, folder, prependString, userName) {
   const pdfBlob = file.getAs("application/pdf");
   // Append '.pdf' to the original name for clarity.
   const newFileName = `${prependString}_${file.getName()}.pdf`;
-  folder.createFile(pdfBlob).setName(newFileName);
-  console.log(`${userName}'s document (converted to PDF) has been moved.`);
+  if (checkAndHandleExistingFile(folder, newFileName, userName)) {
+    folder.createFile(pdfBlob).setName(newFileName);
+    console.log(`${userName}'s document "${file.getName()}" (converted to PDF) copied as "${newFileName}".`);
+  }
 }
