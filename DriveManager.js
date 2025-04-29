@@ -9,22 +9,26 @@ class DriveManager {
      * @returns {Folder} The created folder
      */
     static createFolder(parentFolder, folderName) {
-      return parentFolder.createFolder(folderName);
+      // Check if the folder already exists and get user confirmation if needed
+      if (this.checkAndHandleExistingFolder(parentFolder, folderName)) {
+        return parentFolder.createFolder(folderName);
+      }
+      // If the folder exists and the user chose not to replace it, find and return the existing folder
+      return parentFolder.getFoldersByName(folderName).next();
     }
     
     /**
      * Checks if a file with the given name exists in the folder
      * @param {Folder} folder - The folder to check within
      * @param {string} newFileName - The name of the file to check for
-     * @param {string} userName - The name of the user (for the prompt message)
      * @returns {boolean} True if the operation should proceed (file doesn't exist or user chose YES), false otherwise
      */
-    static checkAndHandleExistingFile(folder, newFileName, userName) {
+    static checkAndHandleExistingFile(folder, newFileName) {
       const existingFiles = folder.getFilesByName(newFileName);
       if (existingFiles.hasNext()) {
         const ui = SpreadsheetApp.getUi();
         const response = ui.alert(
-          `File "${newFileName}" already exists in ${userName}'s folder. Replace?`,
+          `File "${newFileName}" already exists in the destination folder. Replace?`,
           ui.ButtonSet.YES_NO);
     
         if (response == ui.Button.YES) {
@@ -40,6 +44,35 @@ class DriveManager {
         }
       }
       return true; // File doesn't exist, proceed with operation
+    }
+    
+    /**
+     * Checks if a folder with the given name exists in the parent folder
+     * @param {Folder} parentFolder - The parent folder to check within
+     * @param {string} newFolderName - The name of the folder to check for
+     * @returns {boolean} True if the operation should proceed (folder doesn't exist or user chose YES), false otherwise
+     */
+    static checkAndHandleExistingFolder(parentFolder, newFolderName) {
+      const existingFolders = parentFolder.getFoldersByName(newFolderName);
+      if (existingFolders.hasNext()) {
+        const ui = SpreadsheetApp.getUi();
+        const response = ui.alert(
+          `Folder "${newFolderName}" already exists in the destination location. Replace?`,
+          ui.ButtonSet.YES_NO);
+    
+        if (response == ui.Button.YES) {
+          // Remove existing folder(s)
+          while (existingFolders.hasNext()) {
+            existingFolders.next().setTrashed(true); // Move to trash
+          }
+          console.log(`Existing folder "${newFolderName}" marked for replacement.`);
+          return true; // Proceed with operation
+        } else {
+          console.log(`Skipping replacement for existing folder "${newFolderName}".`);
+          return false; // Skip operation
+        }
+      }
+      return true; // Folder doesn't exist, proceed with operation
     }
     
     /**
@@ -74,13 +107,12 @@ class DriveManager {
      * @param {File} file - The Drive file to copy
      * @param {Folder} folder - The destination folder
      * @param {string} prependString - The string to prepend to the file name
-     * @param {string} userName - The name of the user (for logging purposes)
      */
-    static copyFile(file, folder, prependString, userName) {
+    static copyFile(file, folder, prependString) {
       const newFileName = `${prependString}_${file.getName()}`;
-      if (this.checkAndHandleExistingFile(folder, newFileName, userName)) {
+      if (this.checkAndHandleExistingFile(folder, newFileName)) {
         file.makeCopy(newFileName, folder);
-        console.log(`${userName}'s document "${file.getName()}" copied as "${newFileName}".`);
+        console.log(`File "${file.getName()}" copied as "${newFileName}".`);
       }
     }
     
@@ -89,15 +121,14 @@ class DriveManager {
      * @param {File} file - The Google Docs file to convert
      * @param {Folder} folder - The destination folder
      * @param {string} prependString - The string to prepend to the file name
-     * @param {string} userName - The name of the user (for logging purposes)
      */
-    static copyGoogleDocAsPdf(file, folder, prependString, userName) {
+    static copyGoogleDocAsPdf(file, folder, prependString) {
       const pdfBlob = file.getAs("application/pdf");
       // Append '.pdf' to the original name for clarity.
       const newFileName = `${prependString}_${file.getName()}.pdf`;
-      if (this.checkAndHandleExistingFile(folder, newFileName, userName)) {
+      if (this.checkAndHandleExistingFile(folder, newFileName)) {
         folder.createFile(pdfBlob).setName(newFileName);
-        console.log(`${userName}'s document "${file.getName()}" (converted to PDF) copied as "${newFileName}".`);
+        console.log(`Document "${file.getName()}" (converted to PDF) copied as "${newFileName}".`);
       }
     }
     
@@ -180,11 +211,17 @@ class DriveManager {
      * @param {string} driveFileId - The ID of the Drive file
      * @param {string} folderId - The ID of the folder where the file will be copied
      * @param {string} newFileName - The name of the file
+     * @returns {File|null} The copied file, or null if the operation was skipped
      */
     static copyAndRenameFile(driveFileId, folderId, newFileName) {
       const driveFile = DriveApp.getFileById(driveFileId);
       const folder = DriveApp.getFolderById(folderId);
-      driveFile.makeCopy(newFileName, folder);
+      
+      // Check if file with same name already exists
+      if (this.checkAndHandleExistingFile(folder, newFileName)) {
+        return driveFile.makeCopy(newFileName, folder);
+      }
+      return null;
     }
     
     /**

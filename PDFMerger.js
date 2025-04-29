@@ -72,6 +72,108 @@ class PDFMerger {
   }
   
   /**
+   * Handles the case when only one PDF file is found - copies it instead of merging
+   * @param {File} file - The single PDF file to copy
+   * @param {string} outputFileName - Name for the output PDF file
+   * @param {string} [outputFolderId=null] - Optional folder ID to save the PDF (if null, saves to root)
+   * @returns {Promise<Object>} Object with status and result information
+   */
+  static async copySinglePdfFile(file, outputFileName, outputFolderId = null) {
+    console.log(`Only one valid PDF found, copying instead of merging: ${file.getName()}`);
+    let newFile;
+    
+    if (outputFolderId) {
+      // Use the DriveManager helper to copy and rename
+      const fileId = file.getId();
+      DriveManager.copyAndRenameFile(fileId, outputFolderId, outputFileName);
+      // Get the newly created file
+      const folder = DriveApp.getFolderById(outputFolderId);
+      const newFiles = folder.getFilesByName(outputFileName);
+      if (newFiles.hasNext()) {
+        newFile = newFiles.next();
+      }
+    } else {
+      // If no folder specified, copy to root
+      newFile = file.makeCopy(outputFileName);
+    }
+    
+    if (newFile) {
+      return {
+        success: true,
+        message: `Successfully copied the PDF file (skipped merging as only one file was found)`,
+        file: {
+          id: newFile.getId(),
+          name: newFile.getName(),
+          url: newFile.getUrl()
+        }
+      };
+    }
+    
+    return {
+      success: false,
+      message: `Failed to copy the PDF file: ${file.getName()}`
+    };
+  }
+  
+  /**
+   * Merges multiple PDF files into a single PDF document
+   * @param {File[]} files - Array of PDF files to merge
+   * @returns {Promise<Uint8Array>} PDF document bytes
+   */
+  static async mergeMultiplePdfFiles(files) {
+    // Load PDF-lib library
+    const lib = await this.loadPdfLib();
+    const { PDFLib } = lib;
+    
+    // Create a new PDF document
+    const pdfDoc = await PDFLib.PDFDocument.create();
+    
+    // Add each valid PDF to the merged document
+    for (const file of files) {
+      console.log(`Processing ${file.getName()} (${file.getMimeType()})`);
+      try {
+        const pdfData = await PDFLib.PDFDocument.load(new Uint8Array(file.getBlob().getBytes()));
+        const pageIndices = [...Array(pdfData.getPageCount())].map((_, i) => i);
+        const pages = await pdfDoc.copyPages(pdfData, pageIndices);
+        pages.forEach(page => pdfDoc.addPage(page));
+      } catch (e) {
+        console.error(`Error processing ${file.getName()}: ${e.message}`);
+      }
+    }
+    
+    // Save the document
+    return await pdfDoc.save();
+  }
+  
+  /**
+   * Saves a PDF document to Google Drive
+   * @param {Uint8Array} pdfBytes - The PDF document as bytes
+   * @param {string} outputFileName - Name for the output PDF file
+   * @param {string} [outputFolderId=null] - Optional folder ID to save the PDF (if null, saves to root)
+   * @returns {Object} Object with file information
+   */
+  static saveResultingPdf(pdfBytes, outputFileName, outputFolderId = null) {
+    // Create the PDF file blob
+    const blob = Utilities.newBlob([...new Int8Array(pdfBytes)], MimeType.PDF, outputFileName);
+    let newFile;
+    
+    if (outputFolderId) {
+      // Save to specified folder
+      const folder = DriveApp.getFolderById(outputFolderId);
+      newFile = folder.createFile(blob);
+    } else {
+      // Save to root
+      newFile = DriveApp.createFile(blob);
+    }
+    
+    return {
+      id: newFile.getId(),
+      name: newFile.getName(),
+      url: newFile.getUrl()
+    };
+  }
+  
+  /**
    * Merges multiple PDF files into a single PDF
    * @param {string[]} fileIds - Array of Google Drive file IDs of PDF files to merge
    * @param {string} outputFileName - Name for the merged PDF file (default: "Merged.pdf")
@@ -91,50 +193,25 @@ class PDFMerger {
         };
       }
       
-      // Load PDF-lib library
-      const lib = await this.loadPdfLib();
-      const { PDFLib } = lib;
-      
-      // Create a new PDF document
-      const pdfDoc = await PDFLib.PDFDocument.create();
-      
-      // Add each valid PDF to the merged document
-      for (const file of validFiles) {
-        console.log(`Processing ${file.getName()} (${file.getMimeType()})`);
-        try {
-          const pdfData = await PDFLib.PDFDocument.load(new Uint8Array(file.getBlob().getBytes()));
-          const pageIndices = [...Array(pdfData.getPageCount())].map((_, i) => i);
-          const pages = await pdfDoc.copyPages(pdfData, pageIndices);
-          pages.forEach(page => pdfDoc.addPage(page));
-        } catch (e) {
-          console.error(`Error processing ${file.getName()}: ${e.message}`);
+      // If there's only one valid file, simply copy it with the new name
+      if (validFiles.length === 1) {
+        const result = await this.copySinglePdfFile(validFiles[0], outputFileName, outputFolderId);
+        if (invalidFiles.length > 0) {
+          result.invalidFiles = invalidFiles;
         }
+        return result;
       }
       
-      // Save the document
-      const bytes = await pdfDoc.save();
+      // Multiple files - merge them
+      const pdfBytes = await this.mergeMultiplePdfFiles(validFiles);
       
-      // Create the merged PDF file
-      const blob = Utilities.newBlob([...new Int8Array(bytes)], MimeType.PDF, outputFileName);
-      let newFile;
-      
-      if (outputFolderId) {
-        // Save to specified folder
-        const folder = DriveApp.getFolderById(outputFolderId);
-        newFile = folder.createFile(blob);
-      } else {
-        // Save to root
-        newFile = DriveApp.createFile(blob);
-      }
+      // Save the merged PDF to Drive
+      const fileInfo = this.saveResultingPdf(pdfBytes, outputFileName, outputFolderId);
       
       return {
         success: true,
         message: `Successfully merged ${validFiles.length} PDFs`,
-        file: {
-          id: newFile.getId(),
-          name: newFile.getName(),
-          url: newFile.getUrl()
-        },
+        file: fileInfo,
         invalidFiles: invalidFiles.length > 0 ? invalidFiles : null
       };
     } catch (e) {
