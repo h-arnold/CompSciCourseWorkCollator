@@ -36,9 +36,8 @@ class ClassroomManager {
   static getClassroomMembers(courseId) {
     const classroomService = Classroom.Courses.Students;
     const students = classroomService.list(courseId).students;
-    const teachers = Classroom.Courses.Teachers.list(courseId).teachers;
   
-    const members = [...students, ...teachers].map(member => ({
+    const members = students.map(member => ({
       name: member.profile.name.fullName,
       userId: member.userId
     }));
