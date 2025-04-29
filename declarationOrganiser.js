@@ -1,5 +1,6 @@
 /**
  * Class responsible for Google Drive file operations
+ * TODO: Merge this with DriveManager
  */
 class DriveFileManager {
   /**

@@ -1,0 +1,190 @@
+/**
+ * Class for Google Drive operations
+ */
+class DriveManager {
+    /**
+     * Creates a folder in the specified parent folder
+     * @param {Folder} parentFolder - The parent folder
+     * @param {string} folderName - The name of the folder to create
+     * @returns {Folder} The created folder
+     */
+    static createFolder(parentFolder, folderName) {
+      return parentFolder.createFolder(folderName);
+    }
+    
+    /**
+     * Checks if a file with the given name exists in the folder
+     * @param {Folder} folder - The folder to check within
+     * @param {string} newFileName - The name of the file to check for
+     * @param {string} userName - The name of the user (for the prompt message)
+     * @returns {boolean} True if the operation should proceed (file doesn't exist or user chose YES), false otherwise
+     */
+    static checkAndHandleExistingFile(folder, newFileName, userName) {
+      const existingFiles = folder.getFilesByName(newFileName);
+      if (existingFiles.hasNext()) {
+        const ui = SpreadsheetApp.getUi();
+        const response = ui.alert(
+          `File "${newFileName}" already exists in ${userName}'s folder. Replace?`,
+          ui.ButtonSet.YES_NO);
+    
+        if (response == ui.Button.YES) {
+          // Remove existing file(s)
+          while (existingFiles.hasNext()) {
+            existingFiles.next().setTrashed(true); // Move to trash
+          }
+          console.log(`Existing file "${newFileName}" marked for replacement.`);
+          return true; // Proceed with operation
+        } else {
+          console.log(`Skipping replacement for existing file "${newFileName}".`);
+          return false; // Skip operation
+        }
+      }
+      return true; // File doesn't exist, proceed with operation
+    }
+    
+    /**
+     * Checks if the provided file is a Zip archive
+     * @param {File} file - The Drive file to check
+     * @returns {boolean} True if the file's MIME type is application/x-zip-compressed
+     */
+    static isZip(file) {
+      return file.getMimeType() === "application/x-zip-compressed";
+    }
+    
+    /**
+     * Checks if the provided file is a PDF
+     * @param {File} file - The Drive file to check
+     * @returns {boolean} True if the file's MIME type is PDF
+     */
+    static isPdf(file) {
+      return file.getMimeType() === "application/pdf";
+    }
+    
+    /**
+     * Checks if the provided file is a Google Docs file
+     * @param {File} file - The Drive file to check
+     * @returns {boolean} True if the file's MIME type indicates a Google Docs document
+     */
+    static isGoogleDoc(file) {
+      return file.getMimeType() === "application/vnd.google-apps.document";
+    }
+    
+    /**
+     * Copies the given file to the specified folder with a new name
+     * @param {File} file - The Drive file to copy
+     * @param {Folder} folder - The destination folder
+     * @param {string} prependString - The string to prepend to the file name
+     * @param {string} userName - The name of the user (for logging purposes)
+     */
+    static copyFile(file, folder, prependString, userName) {
+      const newFileName = `${prependString}_${file.getName()}`;
+      if (this.checkAndHandleExistingFile(folder, newFileName, userName)) {
+        file.makeCopy(newFileName, folder);
+        console.log(`${userName}'s document "${file.getName()}" copied as "${newFileName}".`);
+      }
+    }
+    
+    /**
+     * Converts a Google Docs file to PDF and copies it to the specified folder with a new name
+     * @param {File} file - The Google Docs file to convert
+     * @param {Folder} folder - The destination folder
+     * @param {string} prependString - The string to prepend to the file name
+     * @param {string} userName - The name of the user (for logging purposes)
+     */
+    static copyGoogleDocAsPdf(file, folder, prependString, userName) {
+      const pdfBlob = file.getAs("application/pdf");
+      // Append '.pdf' to the original name for clarity.
+      const newFileName = `${prependString}_${file.getName()}.pdf`;
+      if (this.checkAndHandleExistingFile(folder, newFileName, userName)) {
+        folder.createFile(pdfBlob).setName(newFileName);
+        console.log(`${userName}'s document "${file.getName()}" (converted to PDF) copied as "${newFileName}".`);
+      }
+    }
+    
+    /**
+     * Finds files in a folder with names starting with specified substrings
+     * @param {string|Folder} folderIdOrFolder - The folder ID or Folder object to search in
+     * @param {string|string[]} startsWithPrefixes - A single substring or array of substrings to match at the beginning of file names
+     * @param {boolean} [recursive=false] - Whether to search in subfolders recursively
+     * @param {string[]} [mimeTypes=null] - Optional array of MIME types to filter by (e.g., ["application/pdf"])
+     * @returns {Object[]} Array of objects with file information {id, name, mimeType, url}
+     */
+    static findFilesByPrefix(folderIdOrFolder, startsWithPrefixes, recursive = false, mimeTypes = null) {
+      try {
+        const folder = (typeof folderIdOrFolder === 'string') 
+          ? DriveApp.getFolderById(folderIdOrFolder) 
+          : folderIdOrFolder;
+            
+        // Convert single string to array for consistent handling
+        const prefixes = Array.isArray(startsWithPrefixes) ? startsWithPrefixes : [startsWithPrefixes];
+        
+        const matchingFiles = [];
+        
+        // Function to collect all files from a folder and its subfolders if recursive
+        const getAllFiles = (currentFolder) => {
+          const allFiles = [];
+          
+          // Get all files in the current folder
+          const files = currentFolder.getFiles();
+          while (files.hasNext()) {
+            allFiles.push(files.next());
+          }
+          
+          // If recursive search is enabled, process subfolders
+          if (recursive) {
+            const subFolders = currentFolder.getFolders();
+            while (subFolders.hasNext()) {
+              allFiles.push(...getAllFiles(subFolders.next()));
+            }
+          }
+          
+          return allFiles;
+        };
+        
+        // Get all files from the folder (and subfolders if recursive)
+        const allFiles = getAllFiles(folder);
+        
+        // Process each prefix in the order they were provided
+        for (const prefix of prefixes) {
+          // For each file, check if it starts with the current prefix
+          for (const file of allFiles) {
+            const fileName = file.getName();
+            
+            if (fileName.startsWith(prefix)) {
+              // If mimeTypes is provided, check if the file's mimeType matches any in the array
+              if (!mimeTypes || mimeTypes.includes(file.getMimeType())) {
+                // Check if this file has already been added to avoid duplicates
+                const fileId = file.getId();
+                if (!matchingFiles.some(existingFile => existingFile.id === fileId)) {
+                  matchingFiles.push({
+                    id: fileId,
+                    name: fileName,
+                    mimeType: file.getMimeType(),
+                    url: file.getUrl()
+                  });
+                }
+              }
+            }
+          }
+        }
+        
+        return matchingFiles;
+      } catch (e) {
+        console.error(`Error finding files by prefix: ${e.message}`);
+        return [];
+      }
+    }
+    
+    /**
+     * Gets just the file IDs from a folder where filenames start with specified substrings
+     * @param {string|Folder} folderIdOrFolder - The folder ID or Folder object to search in
+     * @param {string|string[]} startsWithPrefixes - A single substring or array of substrings to match at the beginning of file names
+     * @param {boolean} [recursive=false] - Whether to search in subfolders recursively
+     * @param {string[]} [mimeTypes=null] - Optional array of MIME types to filter by
+     * @returns {string[]} Array of file IDs
+     */
+    static getFileIdsByPrefix(folderIdOrFolder, startsWithPrefixes, recursive = false, mimeTypes = null) {
+      const files = this.findFilesByPrefix(folderIdOrFolder, startsWithPrefixes, recursive, mimeTypes);
+      return files.map(file => file.id);
+    }
+  }
