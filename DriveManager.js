@@ -3,6 +3,63 @@
  */
 class DriveManager {
     /**
+     * Creates a copy of a Google Document.
+     * @param {string} sourceFileId - The ID of the Google Document to copy.
+     * @param {string} newName - The name for the new copied document.
+     * @param {string} [destinationFolderId=null] - Optional ID of the folder to place the copy in. Defaults to the source file's parent folder.
+     * @returns {File|null} The newly created File object, or null on error, if source is not a Doc, or if user cancels overwrite.
+     */
+    static copyDocument(sourceFileId, newName, destinationFolderId = null) {
+      try {
+        const sourceFile = DriveApp.getFileById(sourceFileId);
+
+        // Ensure it's a Google Doc
+        if (sourceFile.getMimeType() !== MimeType.GOOGLE_DOCS) {
+            console.error(`File ${sourceFileId} (${sourceFile.getName()}) is not a Google Doc. MimeType: ${sourceFile.getMimeType()}`);
+            return null;
+        }
+
+        let targetFolder;
+        if (destinationFolderId) {
+            try {
+                targetFolder = DriveApp.getFolderById(destinationFolderId);
+                console.log(`Using specified destination folder: "${targetFolder.getName()}" (ID: ${destinationFolderId})`);
+            } catch (e) {
+                console.error(`Error accessing specified destination folder ID ${destinationFolderId}: ${e}. Falling back to source file's parent.`);
+                targetFolder = null; // Reset targetFolder so fallback logic runs
+            }
+        }
+
+        // If no valid destination folder specified, use the source file's parent
+        if (!targetFolder) {
+            const parents = sourceFile.getParents();
+            if (parents.hasNext()) {
+                targetFolder = parents.next(); // Use the first parent
+                console.log(`Using source file's parent folder: "${targetFolder.getName()}" (ID: ${targetFolder.getId()})`);
+            } else {
+                console.warn(`Source file ${sourceFileId} has no parent folder. Placing copy in root folder.`);
+                targetFolder = DriveApp.getRootFolder(); // Default to root folder
+            }
+        }
+
+        // Check for existing file with the new name in the target folder
+        if (this.checkAndHandleExistingFile(targetFolder, newName)) {
+            const copiedFile = sourceFile.makeCopy(newName, targetFolder);
+            console.log(`Document ${sourceFileId} copied to "${newName}" (ID: ${copiedFile.getId()}) in folder "${targetFolder.getName()}".`);
+            return copiedFile;
+        } else {
+            console.log(`Skipped copying document to "${newName}" as user chose not to replace existing file.`);
+            return null; // Operation skipped by user
+        }
+
+      } catch (e) {
+        console.error(`Error copying document ${sourceFileId} to "${newName}": ${e}`);
+        SpreadsheetApp.getUi().alert(`Error copying document: ${e.message}`);
+        return null;
+      }
+    }
+
+    /**
      * Creates a folder in the specified parent folder
      * @param {Folder} parentFolder - The parent folder
      * @param {string} folderName - The name of the folder to create
