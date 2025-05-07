@@ -151,12 +151,3 @@ class DeclarationProcessor {
   }
 }
 
-/**
- * Entry point function to maintain backward compatibility
- * @param {string} assignmentTitle - The title of the Google Classroom assignment
- * @param {Array[]} data - The data from the spreadsheet, including folderIds
- */
-function processFolderAttachmentsForDeclarationsOnly(assignmentTitle, data) {
-  const processor = new DeclarationProcessor();
-  processor.processFolderAttachmentsForDeclarationsOnly(assignmentTitle, data);
-}
