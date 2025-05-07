@@ -9,11 +9,19 @@ class DeclarationProcessor {
   }
   
   /**
-   * Process folder attachments for declarations
+   * Creates the final declaration forms for each student in the spreadsheet by merging:
+   *   - the signed declaration on Google Classroom (which doesn't have marks)
+   *   - the unsigned declaration in the student folder (which has marks)
+   *    - the marking grid
+   * Then converts it into a final PDF and renames it according to the
+   * WJEC required convention which is:
+   * {centreNumber}_{candidateNumber}_{firstInitial}_{firstTwoInitialOfSurname}
+   * 
    * @param {string} assignmentTitle - The title of the Google Classroom assignment
    * @param {Array[]} data - The data from the spreadsheet, including folderIds
+   * @param {string} [gClassroomDeclarationFileId] - Optional ID of the base declaration file to merge with
    */
-  processFolderAttachmentsForDeclarationsOnly(assignmentTitle, data) {
+  createFinalDeclarationForms(assignmentTitle, data) {
     const courseId = data[0][0]; // Get the courseId from the first row
     const assignmentId = ClassroomManager.getAssignmentId(courseId, assignmentTitle);
     
@@ -22,15 +30,39 @@ class DeclarationProcessor {
       return;
     }
     
+    // Track processed files for potential merging if requested
+    const processedFiles = [];
+    
     data.forEach((row, index) => {
-      if (index < 2) return; // Skip the header rows
+      if (index < 3) return; // Skip the header rows
       
-      const [name, userId, folderId] = row;
+      const name = row[0];
+      const userId = row[1];
+      const folderId = row[2];
+      
       
       if (!folderId) {
         console.log(`No folder ID found for user ${userId}`);
         return;
       }
+
+      // Get the declaration and marking grid files
+      const studentFolderDeclarationFile = DriveManager.findFilesBySubstring(
+        folderId, 
+        "Declaration", 
+        false, 
+        "application/vnd.google-apps.document",
+        "suffix");
+        
+      const studentMarkingGridFile = DriveManager.findFilesBySubstring(      
+        folderId, 
+        "Marking Grid", 
+        false, 
+        "application/vnd.google-apps.document",
+        "suffix");
+
+      const studentFolderDeclarationFileId = studentFolderDeclarationFile.id
+      const studentMarkingGridFileId = studentFolderDeclarationFileId.id
       
       const submissions = ClassroomManager.getStudentSubmissions(courseId, assignmentId, userId);
       
@@ -38,20 +70,51 @@ class DeclarationProcessor {
         const attachments = submission.assignmentSubmission.attachments || [];
         attachments.forEach(attachment => {
           if (attachment.driveFile) {
-            this.processAttachment(attachment.driveFile.id, folderId, name);
+
+            //Check that the attachment is a Google Drive File
+            const file = DriveApp.getFileById(attachment.driveFile.id)
+
+            // Check if the file is a Google Doc
+            if (DriveManager.isGoogleDoc(file)) {
+              // This attachment is most likely the declaration unless the student has done something strage
+              const gClassroomDeclarationFileId = attachment.driveFile.id
+
+
+              // If base declaration provided, merge first then process as PDF
+              this.mergeAndProcessDeclarations(
+                gClassroomDeclarationFileId, 
+                studentFolderDeclarationFileId,
+                folderId, 
+                name
+              );
+            } else {
+              // No merging needed, just process the original attachment
+              this.createFinalDeclarationPDF(attachment.driveFile.id, folderId, name);
+              return; //No need to continue the loop as there should only be one declaration.
+            }
           }
         });
       });
     });
+    
+
+
   }
   
   /**
-   * Process a single attachment
+   * Creates A SINGLE final declaration PDF which merges:
+   *   - The signed declaration form with no marks on Google Classroom
+   *   - The unsigned declaration form in the student folder with marks.
+   *   - The marking grid
+   * Then converts it into a final PDF and renames it according to the 
+   * WJEC required convension which is:
+   * {centreNumber}_{candidateNumber}_{firstInitial}_{firstTwoInitialOfSurname}
    * @param {string} driveFileId - The Drive file ID
    * @param {string} folderId - The folder ID
    * @param {string} name - The student name
+   * @return {Object|null} Object containing information about processed files or null if processing failed
    */
-  processAttachment(driveFileId, folderId, name) {
+  createFinalDeclarationPDF(driveFileId, folderId, name) {
     const { CandidateNo, CentreNo } = this.textProcessor.getCandidateAndCentreNo(driveFileId);
 
     if (CandidateNo && CentreNo) {
@@ -66,11 +129,20 @@ class DeclarationProcessor {
       if (DriveManager.checkAndHandleExistingFile(folder, pdfFileName)) {
           const pdfFile = folder.createFile(pdfBlob).setName(pdfFileName);
           console.log(`${name}'s document (ID: ${driveFileId}) converted to PDF "${pdfFileName}" (ID: ${pdfFile.getId()}) in folder ${folderId}.`);
+          return {
+            pdfFileId: pdfFile.getId(),
+            pdfFileName: pdfFileName,
+            studentName: name,
+            candidateNo: CandidateNo,
+            centreNo: CentreNo
+          };
       } else {
           console.log(`Skipped creating PDF "${pdfFileName}" for ${name} as user chose not to replace existing file.`);
+          return null;
       }
     } else {
         console.log(`Could not find Candidate/Centre number in document ID ${driveFileId} for ${name}. Skipping PDF conversion.`);
+        return null;
     }
   }
 
@@ -84,7 +156,7 @@ class DeclarationProcessor {
    * @return {string|null} The ID of the newly created merged document, or null on failure.
    */
   mergeDeclarations(gClassroomDeclarationFileId, studentFolderDeclarationFileId, mergedFileName) {
-    console.log(`Starting merge process: Base Doc ID: ${gClassroomDeclarationFileId}, Source Doc ID: ${studentFolderDeclarationFileId}, New Filename: ${mergedFileName}`);
+    console.log(`Starting merge process: Google Classroom Doc ID: ${gClassroomDeclarationFileId}, Student Folder Doc ID: ${studentFolderDeclarationFileId}, New Filename: ${mergedFileName}`);
 
     // Determine the destination folder (parent of the source document)
     let destinationFolderId = null;
@@ -148,6 +220,87 @@ class DeclarationProcessor {
       // console.log(`Trashed partially merged document ${mergedDocId} due to errors.`);
       return null;
     }
+  }
+
+  /**
+   * Merges two declaration documents and then processes the merged document as a PDF
+   * @param {string} baseDeclarationFileId - The ID of the base declaration Google Doc
+   * @param {string} studentDeclarationFileId - The ID of the student's declaration Google Doc
+   * @param {string} folderId - The folder ID to save the resulting files
+   * @param {string} name - The student name
+   * @return {Object|null} Object containing information about processed files or null if processing failed
+   */
+  mergeAndProcessDeclarations(baseDeclarationFileId, studentDeclarationFileId, folderId, name) {
+    console.log(`Starting merge and process workflow for ${name}`);
+    
+    // 1. Generate a name for the merged document
+    const mergedFileName = `Merged_Declaration_${name}`;
+    
+    // 2. Merge the two documents
+    const mergedDocId = this.mergeDeclarations(
+      baseDeclarationFileId, 
+      studentDeclarationFileId, 
+      mergedFileName
+    );
+    
+    if (!mergedDocId) {
+      console.error(`Failed to merge declarations for ${name}. Skipping PDF conversion.`);
+      return null;
+    }
+    
+    // 3. Process the merged document as a PDF
+    console.log(`Successfully merged, now processing as PDF: ${mergedFileName} (ID: ${mergedDocId})`);
+    return this.createFinalDeclarationPDF(mergedDocId, folderId, name);
+  }
+}
+
+/**
+ * Entry point function for processing declarations only
+ * Gets user input for the assignment title and processes declarations
+ * for all students in the spreadsheet
+ */
+function processDeclarationsOnly() {
+  const ui = SpreadsheetApp.getUi();
+  const assignmentTitleResponse = UIManager.promptUser(
+    'Enter Google Classroom Assignment Title',
+    'Please enter the title of the Google Classroom assignment containing the declarations.'
+  );
+
+  if (assignmentTitleResponse.getSelectedButton() === ui.Button.OK) {
+    const assignmentTitle = assignmentTitleResponse.getResponseText().trim(); 
+    
+    
+    try {
+      // Get the data from the Student Info sheet
+      const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Student Info");
+      if (!sheet) {
+        UIManager.showAlert('Student Info sheet not found. Please run "Get names and IDs" first.');
+        return;
+      }
+      
+      const data = sheet.getDataRange().getValues();
+      
+      // Create a separate array with courseId at the beginning
+      const courseInfoSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Course Info");
+      if (!courseInfoSheet) {
+        UIManager.showAlert('Course Info sheet not found. Please run "Get names and IDs" first.');
+        return;
+      }
+      
+      const courseId = courseInfoSheet.getRange(1, 2).getValue();
+      const processData = [[courseId]].concat([[""]]).concat(data); // Add courseId and a blank row
+      
+      // Process the declarations
+      const declarationProcessor = new DeclarationProcessor();
+      declarationProcessor.createFinalDeclarationForms(assignmentTitle, processData);
+      
+      UIManager.showAlert('Processing declarations completed.');
+    } catch (e) {
+      UIManager.showAlert(`Error: ${e.message}`);
+      console.error(e);
+    }
+  } else {
+    UIManager.showAlert('Operation canceled.');
   }
 }
 

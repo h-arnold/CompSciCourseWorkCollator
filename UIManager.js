@@ -11,7 +11,8 @@ class UIManager {
         .addItem("1. Get names and IDs", "runScript")
         .addItem("2. Copy marksheets and declarations", "populateFoldersWithTemplates")
         .addItem("3. Copy coursework submissions", "populateFolders")
-        .addItem("4. Merge PDFs for all students", "mergeAllStudentPDFs")
+        .addItem("4. Process declarations only", "processDeclarationsOnly")
+        .addItem("5. Merge PDFs for all students", "mergeAllStudentPDFs")
         .addToUi();
     }
     
@@ -35,4 +36,3 @@ class UIManager {
       ui.alert(message);
     }
   }
-  
