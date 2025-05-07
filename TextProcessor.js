@@ -4,11 +4,12 @@
 class TextProcessor {
   /**
    * Retrieves candidate and center numbers from a Google Doc
-   * @param {string} driveFileId - The ID of the Drive file
+   * @param {string|File} fileIdOrFile - The ID of the Drive file or File object
    * @return {Object} An object containing candidate and center numbers
    */
-  getCandidateAndCentreNo(driveFileId) {
-    const doc = DocumentApp.openById(driveFileId);
+  getCandidateAndCentreNo(fileIdOrFile) {
+    const fileId = typeof fileIdOrFile === 'string' ? fileIdOrFile : fileIdOrFile.getId();
+    const doc = DocumentApp.openById(fileId);
     const body = doc.getBody();
     const text = body.getText();
     const candidateNoMatch = text.match(/\b\d{4}\b/); // Regular expression for 4 digits
@@ -70,12 +71,13 @@ class TextProcessor {
 
   /**
    * Extracts the text content and formatting attributes of a table identified by its header text.
-   * @param {string} docId - The ID of the Google Document.
+   * @param {string|File} docIdOrFile - The ID of the Google Document or File object
    * @param {string} tableHeaderText - The text identifying the table (e.g., "Title of Task:").
    * @return {Array<Array<{text: string, attributes: object}>>|null} A 2D array of cell data objects, or null if the table isn't found.
    */
-  extractTableText(docId, tableHeaderText) {
+  extractTableText(docIdOrFile, tableHeaderText) {
     try {
+      const docId = typeof docIdOrFile === 'string' ? docIdOrFile : docIdOrFile.getId();
       const doc = DocumentApp.openById(docId);
       const body = doc.getBody();
       const table = this._findTableByHeaderText(body, tableHeaderText);
@@ -100,7 +102,7 @@ class TextProcessor {
       }
       return data;
     } catch (e) {
-      console.error(`Error extracting table "${tableHeaderText}" from doc ${docId}: ${e}`);
+      console.error(`Error extracting table "${tableHeaderText}" from doc ${typeof docIdOrFile === 'string' ? docIdOrFile : docIdOrFile.getName()}: ${e}`);
       return null;
     }
   }
@@ -108,18 +110,19 @@ class TextProcessor {
   /**
    * Replaces the text content and formatting of a table identified by its header text.
    * Assumes the target table has at least the same dimensions as the source data.
-   * @param {string} docId - The ID of the Google Document to modify.
+   * @param {string|File} docIdOrFile - The ID of the Google Document to modify or File object
    * @param {string} tableHeaderText - The text identifying the table to replace content in.
    * @param {Array<Array<{text: string, attributes: object}>>} cellDataArray - The 2D array of cell data (text and attributes) to insert.
    * @return {boolean} True if successful, false otherwise.
    */
-  replaceTableText(docId, tableHeaderText, cellDataArray) {
+  replaceTableText(docIdOrFile, tableHeaderText, cellDataArray) {
     if (!cellDataArray) {
-      console.log(`No cell data provided for table "${tableHeaderText}" in doc ${docId}. Skipping replacement.`);
+      console.log(`No cell data provided for table "${tableHeaderText}" in doc ${typeof docIdOrFile === 'string' ? docIdOrFile : docIdOrFile.getName()}. Skipping replacement.`);
       return false;
     }
 
     try {
+      const docId = typeof docIdOrFile === 'string' ? docIdOrFile : docIdOrFile.getId();
       const doc = DocumentApp.openById(docId);
       const body = doc.getBody();
       const table = this._findTableByHeaderText(body, tableHeaderText);
@@ -173,7 +176,7 @@ class TextProcessor {
       console.log(`Successfully replaced text and formatting in table "${tableHeaderText}" in doc ${docId}.`);
       return true;
     } catch (e) {
-      console.error(`Error replacing text/formatting in table "${tableHeaderText}" in doc ${docId}: ${e} \n Stack: ${e.stack}`);
+      console.error(`Error replacing text/formatting in table "${tableHeaderText}" in doc ${typeof docIdOrFile === 'string' ? docIdOrFile : docIdOrFile.getName()}: ${e} \n Stack: ${e.stack}`);
       return false;
     }
   }

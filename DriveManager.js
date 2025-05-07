@@ -4,28 +4,35 @@
 class DriveManager {
     /**
      * Creates a copy of a Google Document.
-     * @param {string} sourceFileId - The ID of the Google Document to copy.
+     * @param {string|File} sourceFileIdOrFile - The ID of the Google Document to copy or the File object.
      * @param {string} newName - The name for the new copied document.
-     * @param {string} [destinationFolderId=null] - Optional ID of the folder to place the copy in. Defaults to the source file's parent folder.
+     * @param {string|Folder} [destinationFolderIdOrFolder=null] - Optional ID of the folder or Folder object to place the copy in. Defaults to the source file's parent folder.
      * @returns {File|null} The newly created File object, or null on error, if source is not a Doc, or if user cancels overwrite.
      */
-    static copyDocument(sourceFileId, newName, destinationFolderId = null) {
+    static copyDocument(sourceFileIdOrFile, newName, destinationFolderIdOrFolder = null) {
       try {
-        const sourceFile = DriveApp.getFileById(sourceFileId);
+        // Handle whether we received a string ID or a File object
+        const sourceFile = typeof sourceFileIdOrFile === 'string' 
+          ? DriveApp.getFileById(sourceFileIdOrFile) 
+          : sourceFileIdOrFile;
 
         // Ensure it's a Google Doc
         if (sourceFile.getMimeType() !== MimeType.GOOGLE_DOCS) {
-            console.error(`File ${sourceFileId} (${sourceFile.getName()}) is not a Google Doc. MimeType: ${sourceFile.getMimeType()}`);
+            console.error(`File ${sourceFile.getId()} (${sourceFile.getName()}) is not a Google Doc. MimeType: ${sourceFile.getMimeType()}`);
             return null;
         }
 
         let targetFolder;
-        if (destinationFolderId) {
+        if (destinationFolderIdOrFolder) {
             try {
-                targetFolder = DriveApp.getFolderById(destinationFolderId);
-                console.log(`Using specified destination folder: "${targetFolder.getName()}" (ID: ${destinationFolderId})`);
+                // Handle whether we received a string ID or a Folder object
+                targetFolder = typeof destinationFolderIdOrFolder === 'string'
+                  ? DriveApp.getFolderById(destinationFolderIdOrFolder)
+                  : destinationFolderIdOrFolder;
+                  
+                console.log(`Using specified destination folder: "${targetFolder.getName()}" (ID: ${targetFolder.getId()})`);
             } catch (e) {
-                console.error(`Error accessing specified destination folder ID ${destinationFolderId}: ${e}. Falling back to source file's parent.`);
+                console.error(`Error accessing specified destination folder: ${e}. Falling back to source file's parent.`);
                 targetFolder = null; // Reset targetFolder so fallback logic runs
             }
         }
@@ -37,7 +44,7 @@ class DriveManager {
                 targetFolder = parents.next(); // Use the first parent
                 console.log(`Using source file's parent folder: "${targetFolder.getName()}" (ID: ${targetFolder.getId()})`);
             } else {
-                console.warn(`Source file ${sourceFileId} has no parent folder. Placing copy in root folder.`);
+                console.warn(`Source file ${sourceFile.getId()} has no parent folder. Placing copy in root folder.`);
                 targetFolder = DriveApp.getRootFolder(); // Default to root folder
             }
         }
@@ -45,7 +52,7 @@ class DriveManager {
         // Check for existing file with the new name in the target folder
         if (this.checkAndHandleExistingFile(targetFolder, newName)) {
             const copiedFile = sourceFile.makeCopy(newName, targetFolder);
-            console.log(`Document ${sourceFileId} copied to "${newName}" (ID: ${copiedFile.getId()}) in folder "${targetFolder.getName()}".`);
+            console.log(`Document ${sourceFile.getId()} copied to "${newName}" (ID: ${copiedFile.getId()}) in folder "${targetFolder.getName()}".`);
             return copiedFile;
         } else {
             console.log(`Skipped copying document to "${newName}" as user chose not to replace existing file.`);
@@ -53,7 +60,7 @@ class DriveManager {
         }
 
       } catch (e) {
-        console.error(`Error copying document ${sourceFileId} to "${newName}": ${e}`);
+        console.error(`Error copying document ${sourceFileIdOrFile} to "${newName}": ${e}`);
         SpreadsheetApp.getUi().alert(`Error copying document: ${e.message}`);
         return null;
       }
@@ -61,11 +68,16 @@ class DriveManager {
 
     /**
      * Creates a folder in the specified parent folder
-     * @param {Folder} parentFolder - The parent folder
+     * @param {string|Folder} parentFolderIdOrFolder - The parent folder ID or Folder object
      * @param {string} folderName - The name of the folder to create
      * @returns {Folder} The created folder
      */
-    static createFolder(parentFolder, folderName) {
+    static createFolder(parentFolderIdOrFolder, folderName) {
+      // Convert string ID to Folder object if needed
+      const parentFolder = typeof parentFolderIdOrFolder === 'string'
+        ? DriveApp.getFolderById(parentFolderIdOrFolder)
+        : parentFolderIdOrFolder;
+        
       // Check if the folder already exists and get user confirmation if needed
       if (this.checkAndHandleExistingFolder(parentFolder, folderName)) {
         return parentFolder.createFolder(folderName);
@@ -196,7 +208,7 @@ class DriveManager {
      * @param {boolean} [recursive=false] - Whether to search in subfolders recursively
      * @param {string[]} [mimeTypes=null] - Optional array of MIME types to filter by (e.g., ["application/pdf"])
      * @param {string} [searchType='prefix'] - Type of search: 'prefix', 'suffix', or 'contains'
-     * @returns {Object[]} Array of objects with file information {id, name, mimeType, url}
+     * @returns {File|File[]} A single File object if only one match, otherwise an array of Google Drive File objects
      */
     static findFilesBySubstring(folderIdOrFolder, substrings, recursive = false, mimeTypes = null, searchType = 'prefix') {
       try {
@@ -259,17 +271,17 @@ class DriveManager {
               if (!mimeTypes || mimeTypes.includes(file.getMimeType())) {
                 // Check if this file has already been added to avoid duplicates
                 const fileId = file.getId();
-                if (!matchingFiles.some(existingFile => existingFile.id === fileId)) {
-                  matchingFiles.push({
-                    id: fileId,
-                    name: fileName,
-                    mimeType: file.getMimeType(),
-                    url: file.getUrl()
-                  });
+                if (!matchingFiles.some(existingFile => existingFile.getId() === fileId)) {
+                  matchingFiles.push(file);
                 }
               }
             }
           }
+        }
+
+        // Return matching file if the array only has one item
+        if (matchingFiles.length === 1) {
+          return matchingFiles[0];
         }
         
         return matchingFiles;
@@ -279,24 +291,24 @@ class DriveManager {
       }
     }
     
-    // For backward compatibility
-    /**
-     * @deprecated Use findFilesBySubstring with searchType='prefix' instead
-     */
-    static findFilesByPrefix(folderIdOrFolder, startsWithPrefixes, recursive = false, mimeTypes = null) {
-      return this.findFilesBySubstring(folderIdOrFolder, startsWithPrefixes, recursive, mimeTypes, 'prefix');
-    }
-    
+  
     /**
      * Copies and renames a Drive file
-     * @param {string} driveFileId - The ID of the Drive file
-     * @param {string} folderId - The ID of the folder where the file will be copied
+     * @param {string|File} driveFileIdOrFile - The ID of the Drive file or File object
+     * @param {string|Folder} folderIdOrFolder - The ID of the folder or Folder object where the file will be copied
      * @param {string} newFileName - The name of the file
      * @returns {File|null} The copied file, or null if the operation was skipped
      */
-    static copyAndRenameFile(driveFileId, folderId, newFileName) {
-      const driveFile = DriveApp.getFileById(driveFileId);
-      const folder = DriveApp.getFolderById(folderId);
+    static copyAndRenameFile(driveFileIdOrFile, folderIdOrFolder, newFileName) {
+      // Handle whether we received a string ID or a File object
+      const driveFile = typeof driveFileIdOrFile === 'string' 
+        ? DriveApp.getFileById(driveFileIdOrFile) 
+        : driveFileIdOrFile;
+      
+      // Handle whether we received a string ID or a Folder object
+      const folder = typeof folderIdOrFolder === 'string'
+        ? DriveApp.getFolderById(folderIdOrFolder)
+        : folderIdOrFolder;
       
       // Check if file with same name already exists
       if (this.checkAndHandleExistingFile(folder, newFileName)) {
@@ -307,35 +319,27 @@ class DriveManager {
     
     /**
      * Converts a Google Docs file to a PDF
-     * @param {string} driveFileId - The ID of the Drive file
+     * @param {string|File} fileIdOrFile - The ID of the Drive file or a File object
+     * @param {string} [newFileName=null] - Optional new name for the PDF file (without extension)
      * @return {File} The converted PDF file
      */
-    static convertToPdf(driveFileId) {
-      const driveFile = DriveApp.getFileById(driveFileId);
+    static convertToPdf(fileIdOrFile, newFileName = null) {
+      // Handle whether we received a string ID or a File object
+      const driveFile = typeof fileIdOrFile === 'string' 
+        ? DriveApp.getFileById(fileIdOrFile) 
+        : fileIdOrFile;
+      
       const blob = driveFile.getAs('application/pdf');
-      const pdfFile = DriveApp.createFile(blob);
+      
+      // Set the PDF filename, either using the provided name or the original filename
+      let pdfFileName;
+      if (newFileName) {
+        pdfFileName = `${newFileName}.pdf`;
+      } else {
+        pdfFileName = `${driveFile.getName()}.pdf`;
+      }
+      
+      const pdfFile = DriveApp.createFile(blob).setName(pdfFileName);
       return pdfFile;
     }
-    
-    /**
-     * Gets just the file IDs from a folder where filenames match specified substrings
-     * @param {string|Folder} folderIdOrFolder - The folder ID or Folder object to search in
-     * @param {string|string[]} substrings - A single substring or array of substrings to match in file names
-     * @param {boolean} [recursive=false] - Whether to search in subfolders recursively
-     * @param {string[]} [mimeTypes=null] - Optional array of MIME types to filter by
-     * @param {string} [searchType='prefix'] - Type of search: 'prefix', 'suffix', or 'contains'
-     * @returns {string[]} Array of file IDs
-     */
-    static getFileIdsBySubstring(folderIdOrFolder, substrings, recursive = false, mimeTypes = null, searchType = 'prefix') {
-      const files = this.findFilesBySubstring(folderIdOrFolder, substrings, recursive, mimeTypes, searchType);
-      return files.map(file => file.id);
-    }
-    
-    // For backward compatibility
-    /**
-     * @deprecated Use getFileIdsBySubstring with searchType='prefix' instead
-     */
-    static getFileIdsByPrefix(folderIdOrFolder, startsWithPrefixes, recursive = false, mimeTypes = null) {
-      return this.getFileIdsBySubstring(folderIdOrFolder, startsWithPrefixes, recursive, mimeTypes, 'prefix');
-    }
-  }
+}

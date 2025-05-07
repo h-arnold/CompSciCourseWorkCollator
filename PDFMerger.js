@@ -40,29 +40,54 @@ class PDFMerger {
   }
   
   /**
-   * Validates if all provided file IDs represent PDF files
-   * @param {string[]} fileIds - Array of Google Drive file IDs
+   * Validates if all provided items represent PDF files
+   * @param {(string|File)[]} items - Array of Google Drive file IDs or File objects
    * @returns {Object} Object containing valid and invalid files
    */
-  static validateFiles(fileIds) {
+  static validateFiles(items) {
     const validFiles = [];
     const invalidFiles = [];
     
-    fileIds.forEach(fileId => {
+    items.forEach(item => {
       try {
-        const file = DriveApp.getFileById(fileId);
+        let file;
+        // Check if the item is a string (fileId) or a File object
+        if (typeof item === 'string') {
+          file = DriveApp.getFileById(item);
+        } else if (item.getMimeType) {
+          // Assume it's a File object if it has getMimeType method
+          file = item;
+        } else {
+          throw new Error('Invalid item type: must be a file ID string or File object');
+        }
+        
         if (DriveManager.isPdf(file)) {
           validFiles.push(file);
         } else {
+          // Log the file it could not process for debugging purposes.
+          let idValue;
+          if (typeof item === 'string') {
+            idValue = item;
+          } else {
+            idValue = file.getId();
+          }
+          
           invalidFiles.push({
-            id: fileId, 
+            id: idValue, 
             name: file.getName(), 
             type: file.getMimeType()
           });
         }
       } catch (e) {
+        let idValue;
+        if (typeof item === 'string') {
+          idValue = item;
+        } else {
+          idValue = 'unknown';
+        }
+        
         invalidFiles.push({
-          id: fileId, 
+          id: idValue,
           error: e.message
         });
       }
@@ -175,15 +200,15 @@ class PDFMerger {
   
   /**
    * Merges multiple PDF files into a single PDF
-   * @param {string[]} fileIds - Array of Google Drive file IDs of PDF files to merge
+   * @param {(string|File)[]} items - Array of Google Drive file IDs or File objects to merge
    * @param {string} outputFileName - Name for the merged PDF file (default: "Merged.pdf")
    * @param {string} [outputFolderId=null] - Optional folder ID to save the merged PDF (if null, saves to root)
    * @returns {Promise<Object>} Object with status and result information
    */
-  static async mergePDFs(fileIds, outputFileName = "Merged.pdf", outputFolderId = null) {
+  static async mergePDFs(items, outputFileName = "Merged.pdf", outputFolderId = null) {
     try {
       // Validate files first
-      const { validFiles, invalidFiles } = this.validateFiles(fileIds);
+      const { validFiles, invalidFiles } = this.validateFiles(items);
       
       if (validFiles.length === 0) {
         return {

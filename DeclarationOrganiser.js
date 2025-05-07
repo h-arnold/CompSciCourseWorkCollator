@@ -1,13 +1,32 @@
 /**
  * Main processor class that orchestrates the declaration processing workflow
  */
+/**
+ * Processes and manages declaration forms for students by merging, converting, and organizing files
+ * from Google Classroom and Google Drive.
+ * 
+ * This class provides functionality to:
+ * - Merge signed declarations from Google Classroom with unsigned declarations containing marks
+ * - Include marking grids in the final documents
+ * - Convert documents to PDF format
+ * - Rename files according to WJEC naming convention
+ * - Handle file organization and management in student folders
+ * 
+ * Depends on:
+ * - TextProcessor (for text manipulation and filename creation)
+ * - ClassroomManager (static methods for Google Classroom operations)
+ * - DriveManager (static methods for Google Drive operations)
+ */
 class DeclarationProcessor {
   constructor() {
     this.textProcessor = new TextProcessor();
+    this.gClassroomDeclarationFile = null;
+    this.studentFolderDeclarationFile = null;
+    this.studentMarkingGridFile = null;
     // ClassroomManager is a global class with static methods
     // DriveManager is now also being used with static methods
   }
-  
+
   /**
    * Creates the final declaration forms for each student in the spreadsheet by merging:
    *   - the signed declaration on Google Classroom (which doesn't have marks)
@@ -47,23 +66,20 @@ class DeclarationProcessor {
       }
 
       // Get the declaration and marking grid files
-      const studentFolderDeclarationFile = DriveManager.findFilesBySubstring(
+      this.studentFolderDeclarationFile = DriveManager.findFilesBySubstring(
         folderId, 
         "Declaration", 
         false, 
         "application/vnd.google-apps.document",
         "suffix");
         
-      const studentMarkingGridFile = DriveManager.findFilesBySubstring(      
+      this.studentMarkingGridFile = DriveManager.findFilesBySubstring(      
         folderId, 
         "Marking Grid", 
         false, 
         "application/vnd.google-apps.document",
         "suffix");
 
-      const studentFolderDeclarationFileId = studentFolderDeclarationFile.id
-      const studentMarkingGridFileId = studentFolderDeclarationFileId.id
-      
       const submissions = ClassroomManager.getStudentSubmissions(courseId, assignmentId, userId);
       
       submissions.forEach(submission => {
@@ -77,20 +93,15 @@ class DeclarationProcessor {
             // Check if the file is a Google Doc
             if (DriveManager.isGoogleDoc(file)) {
               // This attachment is most likely the declaration unless the student has done something strage
-              const gClassroomDeclarationFileId = attachment.driveFile.id
+              this.gClassroomDeclarationFile = file;
 
-
-              // If base declaration provided, merge first then process as PDF
-              this.mergeAndProcessDeclarations(
-                gClassroomDeclarationFileId, 
-                studentFolderDeclarationFileId,
-                folderId, 
-                name
+              // Now that we have all the files we need, create the final PDF.
+              this.createFinalDeclarationPDF(
+                name, 
+                folderId
               );
-            } else {
-              // No merging needed, just process the original attachment
-              this.createFinalDeclarationPDF(attachment.driveFile.id, folderId, name);
-              return; //No need to continue the loop as there should only be one declaration.
+
+              return; // No need to continue the loop as there should only be one declaration.
             }
           }
         });
@@ -102,47 +113,25 @@ class DeclarationProcessor {
   }
   
   /**
-   * Creates A SINGLE final declaration PDF which merges:
-   *   - The signed declaration form with no marks on Google Classroom
-   *   - The unsigned declaration form in the student folder with marks.
-   *   - The marking grid
-   * Then converts it into a final PDF and renames it according to the 
-   * WJEC required convension which is:
+   * Generates a filename for a declaration document according to the 
+   * WJEC required convention which is:
    * {centreNumber}_{candidateNumber}_{firstInitial}_{firstTwoInitialOfSurname}
-   * @param {string} driveFileId - The Drive file ID
-   * @param {string} folderId - The folder ID
+   * @param {string|File} fileIdOrFile - The Drive file ID or File object to extract candidate/center numbers from
    * @param {string} name - The student name
-   * @return {Object|null} Object containing information about processed files or null if processing failed
+   * @return {string|null} The generated filename or null if required information not found
    */
-  createFinalDeclarationPDF(driveFileId, folderId, name) {
-    const { CandidateNo, CentreNo } = this.textProcessor.getCandidateAndCentreNo(driveFileId);
-
+  generateDeclarationFileName(name) {
+    const { CandidateNo, CentreNo } = this.textProcessor.getCandidateAndCentreNo(this.gClassroomDeclarationFile)
+  
     if (CandidateNo && CentreNo) {
       console.log(`Candidate number ${CandidateNo} and Centre number ${CentreNo} found in document.`);
-      // Convert the original Google Doc to PDF first
-      const pdfBlob = DriveApp.getFileById(driveFileId).getAs('application/pdf');
       const newFileName = this.textProcessor.createFileName(CentreNo, CandidateNo, name);
-      const pdfFileName = `${newFileName}.pdf`; // Ensure PDF extension
-      const folder = DriveApp.getFolderById(folderId);
-
-      // Check if PDF file with same name already exists
-      if (DriveManager.checkAndHandleExistingFile(folder, pdfFileName)) {
-          const pdfFile = folder.createFile(pdfBlob).setName(pdfFileName);
-          console.log(`${name}'s document (ID: ${driveFileId}) converted to PDF "${pdfFileName}" (ID: ${pdfFile.getId()}) in folder ${folderId}.`);
-          return {
-            pdfFileId: pdfFile.getId(),
-            pdfFileName: pdfFileName,
-            studentName: name,
-            candidateNo: CandidateNo,
-            centreNo: CentreNo
-          };
-      } else {
-          console.log(`Skipped creating PDF "${pdfFileName}" for ${name} as user chose not to replace existing file.`);
-          return null;
-      }
+      console.log(`Generated filename for ${name}: ${newFileName}`);
+      return newFileName;
     } else {
-        console.log(`Could not find Candidate/Centre number in document ID ${driveFileId} for ${name}. Skipping PDF conversion.`);
-        return null;
+      const fileId = typeof fileIdOrFile === 'string' ? fileIdOrFile : fileIdOrFile.getId();
+      console.log(`Could not find Candidate/Centre number in document ID ${fileId} for ${name}. Cannot generate filename.`);
+      return null;
     }
   }
 
@@ -155,14 +144,13 @@ class DeclarationProcessor {
    * @param {string} mergedFileName - The desired name for the newly created merged document.
    * @return {string|null} The ID of the newly created merged document, or null on failure.
    */
-  mergeDeclarations(gClassroomDeclarationFileId, studentFolderDeclarationFileId, mergedFileName) {
-    console.log(`Starting merge process: Google Classroom Doc ID: ${gClassroomDeclarationFileId}, Student Folder Doc ID: ${studentFolderDeclarationFileId}, New Filename: ${mergedFileName}`);
+  mergeDeclarations(mergedFileName) {
+    console.log(`Starting merge process: Google Classroom Doc ID: ${this.gClassroomDeclarationFile.getId()}, Student Folder Doc ID: ${this.studentFolderDeclarationFile.getId()}, New Filename: ${mergedFileName}`);
 
     // Determine the destination folder (parent of the source document)
     let destinationFolderId = null;
     try {
-        const studentFolderDeclarationFile = DriveApp.getFileById(studentFolderDeclarationFileId);
-        const parents = studentFolderDeclarationFile.getParents();
+        const parents = this.studentFolderDeclarationFile.getParents();
         if (parents.hasNext()) {
             destinationFolderId = parents.next().getId();
             console.log(`Target destination folder ID (from source doc parent): ${destinationFolderId}`);
@@ -175,7 +163,7 @@ class DeclarationProcessor {
 
 
     // 1. Create a copy of the base document in the source document's folder
-    const mergedDoc = DriveManager.copyDocument(gClassroomDeclarationFileId, mergedFileName, destinationFolderId);
+    const mergedDoc = DriveManager.copyDocument(this.gClassroomDeclarationFile, mergedFileName, destinationFolderId);
     if (!mergedDoc) {
       console.error("Failed to create a copy of the base document. Aborting merge.");
       return null;
@@ -184,26 +172,26 @@ class DeclarationProcessor {
     console.log(`Created copy of base document with ID: ${mergedDocId}`);
 
     // 2. Extract data from source document tables
-    const titleTableData = this.textProcessor.extractTableText(studentFolderDeclarationFileId, "Title of Task:");
-    const totalTableData = this.textProcessor.extractTableText(studentFolderDeclarationFileId, "TOTAL");
+    const titleTableData = this.textProcessor.extractTableText(this.studentFolderDeclarationFile, "Title of Task:");
+    const totalTableData = this.textProcessor.extractTableText(this.studentFolderDeclarationFile, "TOTAL");
 
     if (!titleTableData) {
-        console.warn(`Could not extract 'Title of Task:' table data from source doc ${studentFolderDeclarationFileId}.`);
+        console.warn(`Could not extract 'Title of Task:' table data from source doc ${studentFolderDeclarationFileId.getId()}.`);
     }
     if (!totalTableData) {
-        console.warn(`Could not extract 'TOTAL' table data from source doc ${studentFolderDeclarationFileId}.`);
+        console.warn(`Could not extract 'TOTAL' table data from source doc ${studentFolderDeclarationFileId.getId()}.`);
     }
 
     // 3. Replace data in the new (merged) document tables
     let success = true;
     if (titleTableData) {
-        success = this.textProcessor.replaceTableText(mergedDocId, "Title of Task:", titleTableData) && success;
+        success = this.textProcessor.replaceTableText(mergedDoc, "Title of Task:", titleTableData) && success;
     } else {
         console.log("Skipping replacement for 'Title of Task:' table as no data was extracted.");
     }
 
     if (totalTableData) {
-        success = this.textProcessor.replaceTableText(mergedDocId, "TOTAL", totalTableData) && success;
+        success = this.textProcessor.replaceTableText(mergedDoc, "TOTAL", totalTableData) && success;
     } else {
         console.log("Skipping replacement for 'TOTAL' table as no data was extracted.");
     }
@@ -212,45 +200,52 @@ class DeclarationProcessor {
     if (success) {
       console.log(`Successfully merged tables into new document: ${mergedFileName} (ID: ${mergedDocId})`);
       // Optional: Clean up studentFolderDeclarationFileId or gClassroomDeclarationFileId if needed (e.g., trash them)
-      return mergedDocId;
+      return mergedDoc;
     } else {
       console.error(`Failed to merge one or more tables into document: ${mergedFileName} (ID: ${mergedDocId}). Check logs for details.`);
-      // Consider trashing the partially merged document to avoid confusion
-      // DriveApp.getFileById(mergedDocId).setTrashed(true);
-      // console.log(`Trashed partially merged document ${mergedDocId} due to errors.`);
+      // Optionally trash the merged document if the merge failed
+        DriveApp.getFileById(mergedDocId).setTrashed(true);
+        console.log(`Trashed partially merged document ${mergedDocId} due to errors.`);
       return null;
     }
   }
 
   /**
-   * Merges two declaration documents and then processes the merged document as a PDF
-   * @param {string} baseDeclarationFileId - The ID of the base declaration Google Doc
-   * @param {string} studentDeclarationFileId - The ID of the student's declaration Google Doc
-   * @param {string} folderId - The folder ID to save the resulting files
+   * Merges the declarations and the marking grid. 
    * @param {string} name - The student name
+   * @param {string} folderId - The folder ID
    * @return {Object|null} Object containing information about processed files or null if processing failed
    */
-  mergeAndProcessDeclarations(baseDeclarationFileId, studentDeclarationFileId, folderId, name) {
+  createFinalDeclarationPDF(name) {
     console.log(`Starting merge and process workflow for ${name}`);
     
     // 1. Generate a name for the merged document
-    const mergedFileName = `Merged_Declaration_${name}`;
-    
-    // 2. Merge the two documents
-    const mergedDocId = this.mergeDeclarations(
-      baseDeclarationFileId, 
-      studentDeclarationFileId, 
-      mergedFileName
-    );
-    
-    if (!mergedDocId) {
-      console.error(`Failed to merge declarations for ${name}. Skipping PDF conversion.`);
+    const mergedFileName = this.generateDeclarationFileName(name);
+    if (!mergedFileName) {
+      console.error(`Failed to generate filename for ${name}. Skipping PDF conversion.`);
       return null;
     }
     
-    // 3. Process the merged document as a PDF
-    console.log(`Successfully merged, now processing as PDF: ${mergedFileName} (ID: ${mergedDocId})`);
-    return this.createFinalDeclarationPDF(mergedDocId, folderId, name);
+    // 2. Merge the two documents
+    const mergedDeclarationFile = this.mergeDeclarations(mergedFileName);
+  
+    if (!mergedDeclarationFile) {
+      console.error(`Failed to merge declarations for ${name}. Skipping PDF conversion.`);
+      return null;
+    }
+  
+    // 3. Convert the merged document and marking grid to PDF
+    let filesToMerge = [];
+    const mergedDeclarationPdf = DriveManager.convertToPdf(mergedDeclarationFile);
+    filesToMerge.push(mergedDeclarationPdf);
+    
+    const markingGridPdf = DriveManager.convertToPdf(this.studentMarkingGridFile);
+    filesToMerge.push(markingGridPdf);
+  
+    // 4. Merge the PDFs
+    const finalMergedPDF = PDFMerger.mergePDFs(filesToMerge, markingGridPdf);
+  
+    return finalMergedPDF;
   }
 }
 
