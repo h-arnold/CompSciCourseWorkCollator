@@ -5,17 +5,18 @@
  *
 */
 class SampleCreationOrchestrator {
-    constructor() {
-        this.uiManager = new UIManager();
-    }
+
 
     // Main orchestator method
     createSample() {
         // Get the initial parameters needed
-        const sampleDestinationFolderId = this.uiManager.promptUser("Sample Destination Folder", 
+        const sampleDestinationFolderIdQuery = UIManager.promptUser("Sample Destination Folder", 
             "Please enter the destination folder for the samples:");
-        const declarationAssignmentTitle = this.uiManager.promptUser("Declaration Assignment Name",
+        const declarationAssignmentTitleQuery = UIManager.promptUser("Declaration Assignment Name",
             "Please enter the name of the declaration assignment:");
+
+        const sampleDestinationFolderId = sampleDestinationFolderIdQuery.getResponseText();
+        const declarationAssignmentTitle = declarationAssignmentTitleQuery.getResponseText();
 
         // Create the final declaration sheets for each student.
 
@@ -46,4 +47,10 @@ class SampleCreationOrchestrator {
     mergeAllOtherPDFs(studentFolderData, sampleDestinationFolderId) {
         return PDFMerger.mergePDFsForAllStudents(studentFolderData, sampleDestinationFolderId, false)
     }
+}
+
+function createSamplesForAllStudents() {
+  const sampleCreator = new SampleCreationOrchestrator()
+  sampleCreator.createSample()
+
 }
