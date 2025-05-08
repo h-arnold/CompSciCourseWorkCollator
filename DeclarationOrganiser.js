@@ -28,6 +28,29 @@ class DeclarationProcessor {
   }
 
   /**
+   * Finds the first Google Doc attachment in a Google Classroom submission
+   * @param {Object} submission - The Google Classroom submission object
+   * @return {Object|null} The Google Drive File object if found, null otherwise
+   */
+  findFirstGoogleDocAttachment(submission) {
+    const attachments = submission.assignmentSubmission.attachments || [];
+    
+    for (const attachment of attachments) {
+      if (attachment.driveFile) {
+        //Check that the attachment is a Google Drive File
+        const file = DriveApp.getFileById(attachment.driveFile.id);
+        
+        // Check if the file is a Google Doc
+        if (DriveManager.isGoogleDoc(file)) {
+          return file;
+        }
+      }
+    }
+    
+    return null;
+  }
+
+  /**
    * Creates the final declaration forms for each student in the spreadsheet by merging:
    *   - the signed declaration on Google Classroom (which doesn't have marks)
    *   - the unsigned declaration in the student folder (which has marks)
@@ -37,11 +60,11 @@ class DeclarationProcessor {
    * {centreNumber}_{candidateNumber}_{firstInitial}_{firstTwoInitialOfSurname}
    * 
    * @param {string} assignmentTitle - The title of the Google Classroom assignment
-   * @param {Array[]} data - The data from the spreadsheet, including folderIds
+   * @param {Array[]} studentFolderData - The data from the spreadsheet, including folderIds
    * @param {string} [gClassroomDeclarationFileId] - Optional ID of the base declaration file to merge with
    */
-  createFinalDeclarationForms(assignmentTitle, data) {
-    const courseId = data[0][0]; // Get the courseId from the first row
+  createFinalDeclarationForms(assignmentTitle, studentFolderData) {
+    const courseId = studentFolderData[0][0]; // Get the courseId from the first row
     const assignmentId = ClassroomManager.getAssignmentId(courseId, assignmentTitle);
     
     if (!assignmentId) {
@@ -49,16 +72,17 @@ class DeclarationProcessor {
       return;
     }
     
-    // Track processed files for potential merging if requested
-    const processedFiles = [];
     
-    data.forEach((row, index) => {
+    studentFolderData.forEach((studentDataRow, index) => {
       if (index < 3) return; // Skip the header rows
       
-      const name = row[0];
-      const userId = row[1];
-      const folderId = row[2];
-      
+      const name = studentDataRow[0];
+      const userId = studentDataRow[1];
+      const folderId = studentDataRow[2];
+
+      // Initialise a student sample prefixes array for creating the sample folders later.
+
+    
       
       if (!folderId) {
         console.log(`No folder ID found for user ${userId}`);
@@ -83,28 +107,28 @@ class DeclarationProcessor {
       const submissions = ClassroomManager.getStudentSubmissions(courseId, assignmentId, userId);
       
       submissions.forEach(submission => {
-        const attachments = submission.assignmentSubmission.attachments || [];
-        attachments.forEach(attachment => {
-          if (attachment.driveFile) {
+        // Find the first Google Doc attachment
+        this.gClassroomDeclarationFile = this.findFirstGoogleDocAttachment(submission);
 
-            //Check that the attachment is a Google Drive File
-            const file = DriveApp.getFileById(attachment.driveFile.id)
+        if (!this.gClassroomDeclarationFile) {
+          console.error(`No Google Doc attachment found for user ${name}`);
+          throw new Error(`No Google Doc attachment found for user ${name}`);
+        }
+        
+        console.log(`Found Google Doc attachment for user ${name}`);
+        const prefixAndFilename = this.generateStudentSubmissionPrefixAndFilename(name)
 
-            // Check if the file is a Google Doc
-            if (DriveManager.isGoogleDoc(file)) {
-              // This attachment is most likely the declaration unless the student has done something strage
-              this.gClassroomDeclarationFile = file;
+          // Now that we have all the files we need, create the final PDF.
+          this.createFinalDeclarationPDF(
+            name,
+            prefixAndFilename.fileName, 
+            folderId
+          );
 
-              // Now that we have all the files we need, create the final PDF.
-              this.createFinalDeclarationPDF(
-                name, 
-                folderId
-              );
+          studentDataRow.push(prefixAndFilename.studentSubmissionPrefix)
 
-              return; // No need to continue the loop as there should only be one declaration.
-            }
-          }
-        });
+          return studentFolderData//TODO: Come up with a more elegant way to get the submission prefix than buried down here.
+        
       });
     });
     
@@ -116,11 +140,10 @@ class DeclarationProcessor {
    * Generates a filename for a declaration document according to the 
    * WJEC required convention which is:
    * {centreNumber}_{candidateNumber}_{firstInitial}_{firstTwoInitialOfSurname}
-   * @param {string|File} fileIdOrFile - The Drive file ID or File object to extract candidate/center numbers from
    * @param {string} name - The student name
-   * @return {string|null} The generated filename or null if required information not found
+   * @return {Object|null} Object containing fileName and studentSubmissionPrefix or null if required information not found
    */
-  generateDeclarationFileName(name) {
+  generateStudentSubmissionPrefixAndFilename(name) {
     const { CandidateNo, CentreNo } = this.textProcessor.getCandidateAndCentreNo(this.gClassroomDeclarationFile)
   
     if (CandidateNo && CentreNo) {
@@ -128,9 +151,12 @@ class DeclarationProcessor {
       const studentSubmissionPrefix = this.textProcessor.createStudentSubmissionPrefix(CentreNo, CandidateNo, name);
       const newFileName = this.textProcessor.createFileName(studentSubmissionPrefix);
       console.log(`Generated filename for ${name}: ${newFileName}`);
-      return newFileName;
+      return {
+        fileName: newFileName,
+        studentSubmissionPrefix: studentSubmissionPrefix
+      };
     } else {
-      const fileId = typeof fileIdOrFile === 'string' ? fileIdOrFile : fileIdOrFile.getId();
+      const fileId = this.gClassroomDeclarationFile.getId();
       console.log(`Could not find Candidate/Centre number in document ID ${fileId} for ${name}. Cannot generate filename.`);
       return null;
     }
@@ -217,17 +243,11 @@ class DeclarationProcessor {
    * @param {string} folderId - The folder ID
    * @return {Object|null} Object containing information about processed files or null if processing failed
    */
-  createFinalDeclarationPDF(name) {
+  createFinalDeclarationPDF(name, mergedFileName, folderId) {
     console.log(`Starting merge and process workflow for ${name}`);
+  
     
-    // 1. Generate a name for the merged document
-    const mergedFileName = this.generateDeclarationFileName(name);
-    if (!mergedFileName) {
-      console.error(`Failed to generate filename for ${name}. Skipping PDF conversion.`);
-      return null;
-    }
-    
-    // 2. Merge the two documents
+    // 1. Merge the two documents
     const mergedDeclarationFile = this.mergeDeclarations(mergedFileName);
   
     if (!mergedDeclarationFile) {
@@ -235,7 +255,7 @@ class DeclarationProcessor {
       return null;
     }
   
-    // 3. Convert the merged document and marking grid to PDF
+    // 2. Convert the merged document and marking grid to PDF
     let filesToMerge = [];
     const mergedDeclarationPdf = DriveManager.convertToPdf(mergedDeclarationFile);
     filesToMerge.push(mergedDeclarationPdf);
@@ -244,7 +264,7 @@ class DeclarationProcessor {
     filesToMerge.push(markingGridPdf);
   
     // 4. Merge the PDFs
-    const finalMergedPDF = PDFMerger.mergePDFs(filesToMerge, markingGridPdf);
+    const finalMergedPDF = PDFMerger.mergePDFs(filesToMerge, mergedFileName, folderId);
   
     return finalMergedPDF;
   }
