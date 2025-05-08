@@ -43,7 +43,7 @@ class TextProcessor {
    * @return {string} The formatted file name
    */
   createFileName(centreNo, candidateNo, name) {
-    return `${centreNo}_${candidateNo}_${this.formatStudentName(name)}`;
+    return `0. Frontsheet_${centreNo}_${candidateNo}_${this.formatStudentName(name)}`;
   }
 
   /**
