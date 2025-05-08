@@ -12,33 +12,36 @@ class PDFMerger {
     const cdnUrl = "https://cdn.jsdelivr.net/npm/pdf-lib/dist/pdf-lib.min.js";
     const response = UrlFetchApp.fetch(cdnUrl);
     const content = response.getContentText();
-    
+
     // Create a new context to evaluate the library in
     const context = {};
-    
+
     // Evaluate the library code in the context
     try {
       // Define setTimeout for compatibility with pdf-lib
-      context.setTimeout = function(f, t) {
+      context.setTimeout = function (f, t) {
         Utilities.sleep(t);
         return f();
       };
-      
+
       // Use Function constructor instead of eval for better scoping
-      const setupLibrary = new Function('context', `
+      const setupLibrary = new Function(
+        "context",
+        `
         with(context) {
           ${content}
           return { PDFLib: PDFLib };
         }
-      `);
-      
+      `
+      );
+
       return setupLibrary(context);
-    } catch(e) {
-      console.error('Error loading PDF-lib:', e);
+    } catch (e) {
+      console.error("Error loading PDF-lib:", e);
       throw new Error(`Failed to load PDF-lib: ${e.message}`);
     }
   }
-  
+
   /**
    * Validates if all provided items represent PDF files
    * @param {(string|File)[]} items - Array of Google Drive file IDs or File objects
@@ -47,55 +50,57 @@ class PDFMerger {
   static validateFiles(items) {
     const validFiles = [];
     const invalidFiles = [];
-    
-    items.forEach(item => {
+
+    items.forEach((item) => {
       try {
         let file;
         // Check if the item is a string (fileId) or a File object
-        if (typeof item === 'string') {
+        if (typeof item === "string") {
           file = DriveApp.getFileById(item);
         } else if (item.getMimeType) {
           // Assume it's a File object if it has getMimeType method
           file = item;
         } else {
-          throw new Error('Invalid item type: must be a file ID string or File object');
+          throw new Error(
+            "Invalid item type: must be a file ID string or File object"
+          );
         }
-        
+
         if (DriveManager.isPdf(file)) {
           validFiles.push(file);
         } else {
           // Log the file it could not process for debugging purposes.
           let idValue;
-          if (typeof item === 'string') {
+          if (typeof item === "string") {
             idValue = item;
           } else {
             idValue = file.getId();
           }
-          
+
           invalidFiles.push({
-            id: idValue, 
-            name: file.getName(), 
-            type: file.getMimeType()
+            id: idValue,
+            name: file.getName(),
+            type: file.getMimeType(),
           });
         }
       } catch (e) {
         let idValue;
-        if (typeof item === 'string') {
+        if (typeof item === "string") {
           idValue = item;
         } else {
-          idValue = 'unknown';
+          idValue = "unknown";
         }
-        
+
         invalidFiles.push({
           id: idValue,
-          error: e.message
+          error: e.message,
         });
       }
     });
-    
+
     return { validFiles, invalidFiles };
   }
-  
+
   /**
    * Handles the case when only one PDF file is found - copies it instead of merging
    * @param {File} file - The single PDF file to copy
@@ -103,17 +108,18 @@ class PDFMerger {
    * @param {string} [outputFolderId=null] - Optional folder ID to save the PDF (if null, saves to root)
    * @returns {Promise<Object>} Object with status and result information
    */
-  static async copySinglePdfFile(file, outputFileName, outputFolderId = null) {
-    console.log(`Only one valid PDF found, copying instead of merging: ${file.getName()}`);
+  static async copySinglePdfFile(file, outputFileName, outputFolder = null) {
+    console.log(
+      `Only one valid PDF found, copying instead of merging: ${file.getName()}`
+    );
     let newFile;
-    
-    if (outputFolderId) {
+
+    if (outputFolder) {
       // Use the DriveManager helper to copy and rename
       const fileId = file.getId();
-      DriveManager.copyAndRenameFile(fileId, outputFolderId, outputFileName);
+      DriveManager.copyAndRenameFile(fileId, outputFolder, outputFileName);
       // Get the newly created file
-      const folder = DriveApp.getFolderById(outputFolderId);
-      const newFiles = folder.getFilesByName(outputFileName);
+      const newFiles = outputFolder.getFilesByName(outputFileName);
       if (newFiles.hasNext()) {
         newFile = newFiles.next();
       }
@@ -121,7 +127,7 @@ class PDFMerger {
       // If no folder specified, copy to root
       newFile = file.makeCopy(outputFileName);
     }
-    
+
     if (newFile) {
       return {
         success: true,
@@ -129,17 +135,17 @@ class PDFMerger {
         file: {
           id: newFile.getId(),
           name: newFile.getName(),
-          url: newFile.getUrl()
-        }
+          url: newFile.getUrl(),
+        },
       };
     }
-    
+
     return {
       success: false,
-      message: `Failed to copy the PDF file: ${file.getName()}`
+      message: `Failed to copy the PDF file: ${file.getName()}`,
     };
   }
-  
+
   /**
    * Merges multiple PDF files into a single PDF document
    * @param {File[]} files - Array of PDF files to merge
@@ -149,27 +155,31 @@ class PDFMerger {
     // Load PDF-lib library
     const lib = await this.loadPdfLib();
     const { PDFLib } = lib;
-    
+
     // Create a new PDF document
     const pdfDoc = await PDFLib.PDFDocument.create();
-    
+
     // Add each valid PDF to the merged document
     for (const file of files) {
       console.log(`Processing ${file.getName()} (${file.getMimeType()})`);
       try {
-        const pdfData = await PDFLib.PDFDocument.load(new Uint8Array(file.getBlob().getBytes()));
-        const pageIndices = [...Array(pdfData.getPageCount())].map((_, i) => i);
-        const pages = await pdfDoc.copyPages(pdfData, pageIndices);
-        pages.forEach(page => pdfDoc.addPage(page));
+        const pdfstudentFolderData = await PDFLib.PDFDocument.load(
+          new Uint8Array(file.getBlob().getBytes())
+        );
+        const pageIndices = [...Array(pdfstudentFolderData.getPageCount())].map(
+          (_, i) => i
+        );
+        const pages = await pdfDoc.copyPages(pdfstudentFolderData, pageIndices);
+        pages.forEach((page) => pdfDoc.addPage(page));
       } catch (e) {
         console.error(`Error processing ${file.getName()}: ${e.message}`);
       }
     }
-    
+
     // Save the document
     return await pdfDoc.save();
   }
-  
+
   /**
    * Saves a PDF document to Google Drive
    * @param {Uint8Array} pdfBytes - The PDF document as bytes
@@ -177,27 +187,31 @@ class PDFMerger {
    * @param {string} [outputFolderId=null] - Optional folder ID to save the PDF (if null, saves to root)
    * @returns {Object} Object with file information
    */
-  static saveResultingPdf(pdfBytes, outputFileName, outputFolderId = null) {
+  static saveResultingPdf(pdfBytes, outputFileName, outputFolder = null) {
     // Create the PDF file blob
-    const blob = Utilities.newBlob([...new Int8Array(pdfBytes)], MimeType.PDF, outputFileName);
+    const blob = Utilities.newBlob(
+      [...new Int8Array(pdfBytes)],
+      MimeType.PDF,
+      outputFileName
+    );
     let newFile;
-    
+
     if (outputFolderId) {
       // Save to specified folder
-      const folder = DriveApp.getFolderById(outputFolderId);
-      newFile = folder.createFile(blob);
+
+      newFile = outputFolder.createFile(blob);
     } else {
       // Save to root
       newFile = DriveApp.createFile(blob);
     }
-    
+
     return {
       id: newFile.getId(),
       name: newFile.getName(),
-      url: newFile.getUrl()
+      url: newFile.getUrl(),
     };
   }
-  
+
   /**
    * Merges multiple PDF files into a single PDF
    * @param {(string|File)[]} items - Array of Google Drive file IDs or File objects to merge
@@ -205,48 +219,60 @@ class PDFMerger {
    * @param {string} [outputFolderId=null] - Optional folder ID to save the merged PDF (if null, saves to root)
    * @returns {Promise<Object>} Object with status and result information
    */
-  static async mergePDFs(items, outputFileName = "Merged.pdf", outputFolderId = null) {
+  static async mergePDFs(
+    items,
+    outputFileName = "Merged.pdf",
+    outputFolder = null
+  ) {
     try {
       // Validate files first
       const { validFiles, invalidFiles } = this.validateFiles(items);
-      
+
       if (validFiles.length === 0) {
         return {
           success: false,
           message: "No valid PDF files found to merge",
-          invalidFiles
+          invalidFiles,
         };
       }
-      
+
       // If there's only one valid file, simply copy it with the new name
       if (validFiles.length === 1) {
-        const result = await this.copySinglePdfFile(validFiles[0], outputFileName, outputFolderId);
+        const result = await this.copySinglePdfFile(
+          validFiles[0],
+          outputFileName,
+          outputFolder
+        );
         if (invalidFiles.length > 0) {
           result.invalidFiles = invalidFiles;
         }
         return result;
       }
-      
+
       // Multiple files - merge them
       const pdfBytes = await this.mergeMultiplePdfFiles(validFiles);
-      
+
       // Save the merged PDF to Drive
-      const fileInfo = this.saveResultingPdf(pdfBytes, outputFileName, outputFolderId);
-      
+      const fileInfo = this.saveResultingPdf(
+        pdfBytes,
+        outputFileName,
+        outputFolder
+      );
+
       return {
         success: true,
         message: `Successfully merged ${validFiles.length} PDFs`,
         file: fileInfo,
-        invalidFiles: invalidFiles.length > 0 ? invalidFiles : null
+        invalidFiles: invalidFiles.length > 0 ? invalidFiles : null,
       };
     } catch (e) {
       return {
         success: false,
-        message: `Error merging PDFs: ${e.message}`
+        message: `Error merging PDFs: ${e.message}`,
       };
     }
   }
-  
+
   /**
    * Gets prefixes from the Google Sheet and merges PDFs based on column groups
    * @param {string} sourceFolderId - ID of the folder containing the PDFs to merge
@@ -254,180 +280,182 @@ class PDFMerger {
    * @param {boolean} [recursive=false] - Whether to search in subfolders recursively
    * @returns {Promise<Object>} Object with results of the merge operations
    */
-  static async mergePDFsFromPrefixSheet(sourceFolderId, outputFolderId = null, recursive = false) {
+  static async mergePDFsFromPrefixSheet(
+    sourceFolder,
+    outputFolder = null,
+    recursive = false
+  ) {
     try {
       // Get the Prefixes sheet
       const { prefixSheet } = SpreadsheetManager.getSpreadsheetSheets();
       if (!prefixSheet) {
         return {
           success: false,
-          message: "Prefixes sheet not found."
+          message: "Prefixes sheet not found.",
         };
       }
-      
-      // Get all data from the sheet
-      const data = prefixSheet.getDataRange().getValues();
-      if (data.length < 2) {
+
+      // Get all studentFolderData from the sheet
+      const studentFolderData = prefixSheet
+        .getstudentFolderDataRange()
+        .getValues();
+      if (studentFolderData.length < 2) {
         return {
           success: false,
-          message: "Prefixes sheet is empty or has only headers."
+          message: "Prefixes sheet is empty or has only headers.",
         };
       }
-      
-      const headers = data[0];
+
+      const headers = studentFolderData[0];
       const results = [];
-      
+
       // Process each column (category)
       for (let col = 0; col < headers.length; col++) {
         if (!headers[col]) continue; // Skip columns with no header
-        
+
         // Collect all non-empty prefixes for this column
         const prefixes = [];
-        for (let row = 1; row < data.length; row++) {
-          if (data[row][col] && data[row][col].toString().trim()) {
-            prefixes.push(data[row][col].toString().trim());
+        for (let row = 1; row < studentFolderData.length; row++) {
+          if (
+            studentFolderData[row][col] &&
+            studentFolderData[row][col].toString().trim()
+          ) {
+            prefixes.push(studentFolderData[row][col].toString().trim());
           }
         }
-        
+
         if (prefixes.length === 0) continue; // Skip if no prefixes for this category
-        
+
         // Generate output filename from the header
         const outputFileName = `${headers[col]}.pdf`;
-        console.log(`Processing category "${headers[col]}" with prefixes: ${prefixes.join(', ')}`);
-        
+        console.log(
+          `Processing category "${headers[col]}" with prefixes: ${prefixes.join(
+            ", "
+          )}`
+        );
+
         // Find all files matching these prefixes
         const fileIds = DriveManager.getFileIdsBySubstring(
-          sourceFolderId, 
+          sourceFolder,
           prefixes,
-          recursive, 
+          recursive,
           ["application/pdf"],
-          'prefix'  // We're still using prefix matching as before
+          "prefix" // We're still using prefix matching as before
         );
-        
+
         if (fileIds.length === 0) {
           results.push({
             category: headers[col],
             success: false,
-            message: "No matching PDF files found for this category."
+            message: "No matching PDF files found for this category.",
           });
           continue;
         }
-        
+
         // Merge PDFs for this category
-        const mergeResult = await this.mergePDFs(fileIds, outputFileName, outputFolderId);
-        
+        const mergeResult = await this.mergePDFs(
+          fileIds,
+          outputFileName,
+          outputFolder
+        );
+
         // Store the result with category info
         results.push({
           category: headers[col],
-          ...mergeResult
+          ...mergeResult,
         });
       }
-      
+
       return {
         success: true,
         message: `Processed ${results.length} categories from the prefixes sheet.`,
-        results
+        results,
       };
     } catch (e) {
       console.error(`Error merging PDFs from prefix sheet: ${e.message}`);
       return {
         success: false,
-        message: `Error merging PDFs from prefix sheet: ${e.message}`
+        message: `Error merging PDFs from prefix sheet: ${e.message}`,
       };
     }
   }
-  
+
   /**
    * Merges PDFs for each student folder based on the prefix sheet
    * @param {boolean} [recursive=false] - Whether to search in subfolders recursively
    * @returns {Promise<Object>} Object with results of the merge operations for each student
    */
-  static async mergePDFsForAllStudents(recursive = false) {
-    try {
-      // Get the Student Info sheet
-      const { studentSheet } = SpreadsheetManager.getSpreadsheetSheets();
-      if (!studentSheet) {
-        return {
+  static async mergePDFsForAllStudents(
+    studentFolderData,
+    destinationFolderId,
+    recursive = false
+  ) {
+    const headers = studentFolderData[0];
+    const folderIdColumnIndex =
+      headers.findIndex((header) => header.toLowerCase().includes("folder")) ||
+      2; // Default to 3rd column (index 2)
+    const nameColumnIndex = 0; // Assume name is in the first column
+
+    const studentResults = [];
+
+    // Process each student row (skip header row)
+    for (let row = 1; row < studentFolderData.length; row++) {
+      const studentName = studentFolderData[row][nameColumnIndex];
+      const sourceFolderId = studentFolderData[row][folderIdColumnIndex];
+      const destinationFolderName = studentFolderData[row][3]; // 3rd column from studentFolderData should be the destination folder name.
+
+      if (!sourceFolderId) {
+        studentResults.push({
+          student: studentName || `Row ${row + 1}`,
           success: false,
-          message: "Student Info sheet not found."
-        };
+          message: "No folder ID found for this student.",
+        });
+        continue;
       }
-      
-      // Get all data from the Student Info sheet
-      const data = studentSheet.getDataRange().getValues();
-      if (data.length < 2) {
-        return {
+
+      try {
+        // Get the source folder
+        const sourceFolder = DriveApp.getFolderById(sourceFolderId);
+
+        // Create a "MergedPDFs" subfolder
+        const mergedPDFsFolder = DriveManager.createFolderInParentFolder(
+          destinationFolderId,
+          destinationFolderName
+        );
+        const outputFolderId = mergedPDFsFolder.getId();
+
+        console.log(
+          `Processing student: ${studentName}, creating merged PDFs in folder: ${outputFolderId}`
+        );
+
+        // Run the merge operation for this student's folder
+        const mergeResult = await this.mergePDFsFromPrefixSheet(
+          sourceFolder,
+          outputFolder,
+          recursive
+        );
+
+        // Store the result with student info
+        studentResults.push({
+          student: studentName,
+          sourceFolderId,
+          outputFolderId,
+          ...mergeResult,
+        });
+      } catch (e) {
+        console.error(`Error processing student ${studentName}: ${e.message}`);
+        studentResults.push({
+          student: studentName,
           success: false,
-          message: "Student Info sheet is empty or has only headers."
-        };
+          message: `Error: ${e.message}`,
+        });
       }
-      
-      const headers = data[0];
-      const folderIdColumnIndex = headers.findIndex(header => header.toLowerCase().includes("folder")) || 2; // Default to 3rd column (index 2)
-      const nameColumnIndex = 0; // Assume name is in the first column
-      
-      const studentResults = [];
-      
-      // Process each student row (skip header row)
-      for (let row = 1; row < data.length; row++) {
-        const studentName = data[row][nameColumnIndex];
-        const sourceFolderId = data[row][folderIdColumnIndex];
-        
-        if (!sourceFolderId) {
-          studentResults.push({
-            student: studentName || `Row ${row + 1}`,
-            success: false,
-            message: "No folder ID found for this student."
-          });
-          continue;
-        }
-        
-        try {
-          // Get the source folder
-          const sourceFolder = DriveApp.getFolderById(sourceFolderId);
-          
-          // Create a "MergedPDFs" subfolder
-          const mergedPDFsFolder = DriveManager.createFolder(sourceFolder, "MergedPDFs");
-          const outputFolderId = mergedPDFsFolder.getId();
-          
-          console.log(`Processing student: ${studentName}, creating merged PDFs in folder: ${outputFolderId}`);
-          
-          // Run the merge operation for this student's folder
-          const mergeResult = await this.mergePDFsFromPrefixSheet(
-            sourceFolderId,
-            outputFolderId,
-            recursive
-          );
-          
-          // Store the result with student info
-          studentResults.push({
-            student: studentName,
-            sourceFolderId,
-            outputFolderId,
-            ...mergeResult
-          });
-          
-        } catch (e) {
-          console.error(`Error processing student ${studentName}: ${e.message}`);
-          studentResults.push({
-            student: studentName,
-            success: false,
-            message: `Error: ${e.message}`
-          });
-        }
-      }
-      
-      return {
-        success: true,
-        message: `Processed PDF merges for ${studentResults.length} students.`,
-        studentResults
-      };
-    } catch (e) {
-      console.error(`Error merging PDFs for students: ${e.message}`);
-      return {
-        success: false,
-        message: `Error merging PDFs for students: ${e.message}`
-      };
     }
+
+    return {
+      success: true,
+      message: `Processed PDF merges for ${studentResults.length} students.`,
+      studentResults,
+    };
   }
 }

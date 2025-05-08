@@ -14,15 +14,19 @@ class SampleCreationOrchestrator {
         // Get the initial parameters needed
         const sampleDestinationFolderId = this.uiManager.promptUser("Sample Destination Folder", 
             "Please enter the destination folder for the samples:");
-        const declarationAssignmentName = this.uiManager.promptUser("Declaration Assignment Name",
+        const declarationAssignmentTitle = this.uiManager.promptUser("Declaration Assignment Name",
             "Please enter the name of the declaration assignment:");
 
         // Create the final declaration sheets for each student.
 
-        studentFolderData = this.processDeclarationSheets();
+        const studentFolderData = this.processDeclarationSheets(declarationAssignmentTitle); //Returns the updated student data array with the folder names for each student.
+        
+        // Merge all remaining PDFs into the final sample folder. Don't forget to include the declaration forms in the `Prefixes` sheet.
+        this.mergeAllOtherPDFs(studentFolderData, sampleDestinationFolderId)
+
     }
 
-    processDeclarationSheets() {
+    processDeclarationSheets(declarationAssignmentTitle) {
         const spreadsheets = SpreadsheetManager.getSpreadsheetSheets();
         const studentSheet = spreadsheets.studentSheet;
         const courseSheet = spreadsheets.courseSheet;
@@ -36,8 +40,10 @@ class SampleCreationOrchestrator {
         const declarationProcessor = new DeclarationProcessor();
 
         // Return the updated student data array with the properly formatted folder names for each student.
-        return declarationProcessor.createFinalDeclarationForms(assignmentTitle, processData);
+        return declarationProcessor.createFinalDeclarationForms(declarationAssignmentTitle, processData);
     }
 
-
+    mergeAllOtherPDFs(studentFolderData, sampleDestinationFolderId) {
+        return PDFMerger.mergePDFsForAllStudents(studentFolderData, sampleDestinationFolderId, false)
+    }
 }

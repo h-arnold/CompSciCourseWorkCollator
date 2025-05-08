@@ -72,7 +72,7 @@ class DriveManager {
      * @param {string} folderName - The name of the folder to create
      * @returns {Folder} The created folder
      */
-    static createFolder(parentFolderIdOrFolder, folderName) {
+    static createFolderInParentFolder(parentFolderIdOrFolder, folderName) {
       // Convert string ID to Folder object if needed
       const parentFolder = typeof parentFolderIdOrFolder === 'string'
         ? DriveApp.getFolderById(parentFolderIdOrFolder)
