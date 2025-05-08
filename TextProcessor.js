@@ -42,8 +42,19 @@ class TextProcessor {
    * @param {string} name - The student name
    * @return {string} The formatted file name
    */
-  createFileName(centreNo, candidateNo, name) {
-    return `0. Frontsheet_${centreNo}_${candidateNo}_${this.formatStudentName(name)}`;
+  createFileName(StudentSubmissionPrefix) {
+    return `0. Frontsheet_${StudentSubmissionPrefix}`;
+  }
+
+  /**
+   * Creates a standardized student submission prefix without the frontsheet prefix
+   * @param {string} centreNo - The centre number
+   * @param {string} candidateNo - The candidate number
+   * @param {string} name - The student name
+   * @return {string} The formatted submission prefix
+   */
+  createStudentSubmissionPrefix(centreNo, candidateNo, name) {
+    return `${centreNo}_${candidateNo}_${this.formatStudentName(name)}`;
   }
 
   /**

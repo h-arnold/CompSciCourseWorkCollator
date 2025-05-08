@@ -125,7 +125,8 @@ class DeclarationProcessor {
   
     if (CandidateNo && CentreNo) {
       console.log(`Candidate number ${CandidateNo} and Centre number ${CentreNo} found in document.`);
-      const newFileName = this.textProcessor.createFileName(CentreNo, CandidateNo, name);
+      const studentSubmissionPrefix = this.textProcessor.createStudentSubmissionPrefix(CentreNo, CandidateNo, name);
+      const newFileName = this.textProcessor.createFileName(studentSubmissionPrefix);
       console.log(`Generated filename for ${name}: ${newFileName}`);
       return newFileName;
     } else {
