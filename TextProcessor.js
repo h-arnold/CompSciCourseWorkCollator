@@ -30,7 +30,7 @@ class TextProcessor {
    */
   formatStudentName(name) {
     const [firstName, surname] = name.split(' ');
-    const formattedSurname = surname.slice(0, 2).charAt(0).toUpperCase() + surname.slice(1, 2).toLowerCase();
+    const formattedSurname = surname.slice(0, 2).toUpperCase();
     const formattedFirstName = firstName.charAt(0).toUpperCase();
     return `${formattedSurname}_${formattedFirstName}`;
   }
