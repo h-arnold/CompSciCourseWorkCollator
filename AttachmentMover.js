@@ -265,7 +265,7 @@ async function mergeAllStudentPDFs() {
   
   try {
     // Run the merge operation
-    const result = await PDFMerger.mergePDFsForAllStudents(recursive);
+    const result = await PDFMerger.getInstance().mergePDFsForAllStudents(recursive);
     
     // Show results to the user
     if (result.success) {

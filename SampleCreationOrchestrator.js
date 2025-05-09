@@ -18,6 +18,10 @@ class SampleCreationOrchestrator {
         const sampleDestinationFolderId = sampleDestinationFolderIdQuery.getResponseText();
         const declarationAssignmentTitle = declarationAssignmentTitleQuery.getResponseText();
 
+        // Set the sample destination folder for PDFMerger
+        const sampleDestinationFolder = DriveApp.getFolderById(sampleDestinationFolderId);
+        PDFMerger.getInstance().setDestinationFolder(sampleDestinationFolder);
+
         // Create the final declaration sheets for each student.
 
         const studentFolderData = this.processDeclarationSheets(declarationAssignmentTitle); //Returns the updated student data array with the folder names for each student.
@@ -45,7 +49,7 @@ class SampleCreationOrchestrator {
     }
 
     mergeAllOtherPDFs(studentFolderData, sampleDestinationFolderId) {
-        return PDFMerger.mergePDFsForAllStudents(studentFolderData, sampleDestinationFolderId, false)
+        return PDFMerger.getInstance().mergePDFsForAllStudents(studentFolderData, sampleDestinationFolderId, false)
     }
 }
 

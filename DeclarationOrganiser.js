@@ -89,16 +89,18 @@ class DeclarationProcessor {
         return;
       }
 
+      const studentFolder = DriveApp.getFolderById(folderId);
+
       // Get the declaration and marking grid files
       this.studentFolderDeclarationFile = DriveManager.findFilesBySubstring(
-        folderId, 
+        studentFolder, 
         "Declaration", 
         false, 
         "application/vnd.google-apps.document",
         "suffix");
         
       this.studentMarkingGridFile = DriveManager.findFilesBySubstring(      
-        folderId, 
+        studentFolder, 
         "Marking Grid", 
         false, 
         "application/vnd.google-apps.document",
@@ -122,7 +124,7 @@ class DeclarationProcessor {
           this.createFinalDeclarationPDF(
             name,
             prefixAndFilename.fileName, 
-            folderId
+            studentFolder
           );
 
           studentDataRow.push(prefixAndFilename.studentSubmissionPrefix)
@@ -240,10 +242,10 @@ class DeclarationProcessor {
   /**
    * Merges the declarations and the marking grid. 
    * @param {string} name - The student name
-   * @param {string} folderId - The folder ID
+   * @param {string} folder - The Google Drive Folder Object
    * @return {Object|null} Object containing information about processed files or null if processing failed
    */
-  createFinalDeclarationPDF(name, mergedFileName, folderId) {
+  createFinalDeclarationPDF(name, mergedFileName, folder) {
     console.log(`Starting merge and process workflow for ${name}`);
   
     
@@ -257,14 +259,14 @@ class DeclarationProcessor {
   
     // 2. Convert the merged document and marking grid to PDF
     let filesToMerge = [];
-    const mergedDeclarationPdf = DriveManager.convertToPdf(mergedDeclarationFile);
+    const mergedDeclarationPdf = DriveManager.copyGoogleDocAsPdf(mergedDeclarationFile, folder);
     filesToMerge.push(mergedDeclarationPdf);
     
-    const markingGridPdf = DriveManager.convertToPdf(this.studentMarkingGridFile);
+    const markingGridPdf = DriveManager.copyGoogleDocAsPdf(this.studentMarkingGridFile, folder);
     filesToMerge.push(markingGridPdf);
   
     // 4. Merge the PDFs
-    const finalMergedPDF = PDFMerger.mergePDFs(filesToMerge, mergedFileName, folderId);
+    const finalMergedPDF = PDFMerger.getInstance().mergePDFs(filesToMerge, mergedFileName, folder);
   
     return finalMergedPDF;
   }

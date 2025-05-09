@@ -1,55 +1,14 @@
 /**
- * Class for handling PDF merge operations using singleton pattern
+ * Class for handling PDF merge operations
  */
 class PDFMerger {
-  /**
-   * Get the singleton instance of PDFMerger
-   * @returns {PDFMerger} The singleton instance
-   */
-  static getInstance() {
-    if (!PDFMerger._instance) {
-      PDFMerger._instance = new PDFMerger();
-    }
-    return PDFMerger._instance;
-  }
-  
-  /**
-   * Private constructor to prevent direct instantiation
-   * Use PDFMerger.getInstance() instead
-   */
-  constructor() {
-    // Prevent multiple instances when using new PDFMerger()
-    if (PDFMerger._instance) {
-      console.warn('PDFMerger is a singleton. Use PDFMerger.getInstance() instead of new PDFMerger()');
-      return PDFMerger._instance;
-    }
-    
-    /**
-     * Default destination folder for merged PDFs
-     * @type {Folder|null}
-     */
-    this.destinationFolder = null;
-    this.pdfLib = this.loadPdfLib();
-    
-    // Set this as the singleton instance
-    PDFMerger._instance = this;
-  }
-
-  /**
-   * Sets the destination folder for merged PDFs
-   * @param {Folder} folder - The folder to set as destination
-   */
-  setDestinationFolder(folder) {
-    this.destinationFolder = folder;
-  }
-
   /**
    * Load the PDF-lib library from CDN
    * Docs for the library can be found here:
    * https://pdf-lib.js.org/
    * @returns {Promise<Object>} Promise that resolves with the PDFLib object
    */
-  async loadPdfLib() {
+  static async loadPdfLib() {
     const cdnUrl = "https://cdn.jsdelivr.net/npm/pdf-lib/dist/pdf-lib.min.js";
     const response = UrlFetchApp.fetch(cdnUrl);
     const content = response.getContentText();
@@ -88,7 +47,7 @@ class PDFMerger {
    * @param {(string|File)[]} items - Array of Google Drive file IDs or File objects
    * @returns {Object} Object containing valid and invalid files
    */
-  validateFiles(items) {
+  static validateFiles(items) {
     const validFiles = [];
     const invalidFiles = [];
 
@@ -149,19 +108,18 @@ class PDFMerger {
    * @param {Folder} [outputFolder=null] - Optional folder to save the PDF (if null, saves to root)
    * @returns {Promise<Object>} Object with status and result information
    */
-  async copySinglePdfFile(file, outputFileName, outputFolder = null) {
+  static async copySinglePdfFile(file, outputFileName, outputFolder = null) {
     console.log(
       `Only one valid PDF found, copying instead of merging: ${file.getName()}`
     );
     let newFile;
-    const effectiveOutputFolder = outputFolder || this.destinationFolder;
 
-    if (effectiveOutputFolder) {
+    if (outputFolder) {
       // Use the DriveManager helper to copy and rename
       const fileId = file.getId();
-      DriveManager.copyAndRenameFile(fileId, effectiveOutputFolder, outputFileName);
+      DriveManager.copyAndRenameFile(fileId, outputFolder, outputFileName);
       // Get the newly created file
-      const newFiles = effectiveOutputFolder.getFilesByName(outputFileName);
+      const newFiles = outputFolder.getFilesByName(outputFileName);
       if (newFiles.hasNext()) {
         newFile = newFiles.next();
       }
@@ -191,17 +149,18 @@ class PDFMerger {
   /**
    * Merges multiple PDF files into a single PDF document
    * @param {File[]} files - Array of PDF files to merge
-   * @returns {Promise<Object>} Object containing PDF bytes
+   * @returns {Promise<Object>} Object containing PDF bytes and base64 string
    */
-  async mergeMultiplePdfFiles(files) {
+  static async mergeMultiplePdfFiles(files) {
     // Load PDF-lib library
-    const lib = await this.loadPdfLib();
+    const lib = await PDFMerger.loadPdfLib();
     const { PDFLib } = lib;
 
     // Create a new PDF document
     const pdfDoc = await PDFLib.PDFDocument.create();
     
     let totalPages = 0;
+    console.log(`Starting to merge ${files.length} PDF files`);
 
     // Add each valid PDF to the merged document
     for (const file of files) {
@@ -239,9 +198,13 @@ class PDFMerger {
       const pdfBytes = await pdfDoc.save();
       console.log(`Successfully saved PDF, byte length: ${pdfBytes.length}`);
       
-      // Return only the bytes
+      // Convert to base64 for more reliable transfer
+      const base64PDF = PDFLib.base64.encode(pdfBytes);
+      console.log(`Generated base64 PDF string of length: ${base64PDF.length}`);
+      
       return {
-        bytes: pdfBytes
+        bytes: pdfBytes,
+        base64: base64PDF
       };
     } catch (e) {
       console.error(`Error saving merged PDF: ${e.message}`);
@@ -254,19 +217,18 @@ class PDFMerger {
    * Process PDFs in smaller batches to avoid memory issues
    * @param {File[]} files - Array of PDF files to merge
    * @param {number} batchSize - Size of each batch
-   * @returns {Promise<Object>} Object containing merged PDF data (bytes)
+   * @returns {Promise<Object>} Object containing merged PDF data
    */
-  async processPDFsInBatches(files, batchSize = 5) {
+  static async processPDFsInBatches(files, batchSize = 5) {
     console.log(`Processing ${files.length} files in batches of ${batchSize}`);
     
     // If there are fewer files than the batch size, just process them directly
     if (files.length <= batchSize) {
-      return await this.mergeMultiplePdfFiles(files);
+      return await PDFMerger.mergeMultiplePdfFiles(files);
     }
     
     // Create temporary storage for output files
     const tempFiles = [];
-    const parentFolderForTempFiles = this.destinationFolder || DriveApp.getRootFolder();
     
     try {
       // Process files in batches
@@ -276,25 +238,25 @@ class PDFMerger {
         console.log(`Processing batch ${Math.floor(i/batchSize) + 1}: files ${i+1} to ${end}`);
         
         // Merge this batch into a temporary PDF
-        const batchData = await this.mergeMultiplePdfFiles(batch);
+        const batchData = await PDFMerger.mergeMultiplePdfFiles(batch);
         
         // Save it as a temporary file in Drive root
         const tempName = `temp_batch_${Math.floor(i/batchSize) + 1}_of_${Math.ceil(files.length/batchSize)}.pdf`;
         const tempBlob = Utilities.newBlob(
-          batchData.bytes, // Use bytes directly
+          Utilities.base64Decode(batchData.base64),
           MimeType.PDF,
           tempName
         );
         
-        const tempFile = parentFolderForTempFiles.createFile(tempBlob);
+        const tempFile = DriveApp.createFile(tempBlob);
         tempFiles.push(tempFile);
-        console.log(`Created temporary file: ${tempFile.getName()} (${tempFile.getId()}) in folder ${parentFolderForTempFiles.getName()}`);
+        console.log(`Created temporary file: ${tempFile.getName()} (${tempFile.getId()})`);
       }
       
       console.log(`Created ${tempFiles.length} temporary files, now merging them`);
       
       // Now merge all temporary files
-      const finalData = await this.mergeMultiplePdfFiles(tempFiles);
+      const finalData = await PDFMerger.mergeMultiplePdfFiles(tempFiles);
       
       // Clean up temp files
       tempFiles.forEach(file => {
@@ -326,29 +288,28 @@ class PDFMerger {
 
   /**
    * Saves a PDF document to Google Drive
-   * @param {Object} pdfData - Object with PDF bytes (`pdfData.bytes`)
+   * @param {Object} pdfData - Object with PDF bytes and base64 string
    * @param {string} outputFileName - Name for the output PDF file
    * @param {Folder} [outputFolder=null] - Optional folder to save the PDF (if null, saves to root)
    * @returns {Object} Object with file information
    */
-  saveResultingPdf(pdfData, outputFileName, outputFolder = null) {
+  static saveResultingPdf(pdfData, outputFileName, outputFolder = null) {
     console.log(`Saving PDF to Drive with filename: ${outputFileName}`);
     
-    // Get the PDF file bytes directly
-    const bytes = pdfData.bytes;
-    console.log(`Using PDF data with ${bytes.length} bytes`);
+    // Create the PDF file blob from base64 string
+    const bytes = Utilities.base64Decode(pdfData.base64);
+    console.log(`Decoded base64 PDF with ${bytes.length} bytes`);
     
     // Create Blob
     const blob = Utilities.newBlob(bytes, MimeType.PDF, outputFileName);
     console.log(`Created blob with size: ${blob.getBytes().length} bytes`);
     
     let newFile;
-    const effectiveOutputFolder = outputFolder || this.destinationFolder;
 
-    if (effectiveOutputFolder) {
+    if (outputFolder) {
       // Save to specified folder
-      console.log(`Saving to folder: ${effectiveOutputFolder.getName()}`);
-      newFile = effectiveOutputFolder.createFile(blob);
+      console.log(`Saving to folder: ${outputFolder.getName()}`);
+      newFile = outputFolder.createFile(blob);
     } else {
       // Save to root
       console.log("Saving to root folder");
@@ -370,14 +331,14 @@ class PDFMerger {
    * @param {Folder} [outputFolder=null] - Optional folder to save the merged PDF (if null, saves to root)
    * @returns {Promise<Object>} Object with status and result information
    */
-  async mergePDFs(
+  static async mergePDFs(
     items,
     outputFileName = "Merged.pdf",
     outputFolder = null
   ) {
     try {
       // Validate files first
-      const { validFiles, invalidFiles } = this.validateFiles(items);
+      const { validFiles, invalidFiles } = PDFMerger.validateFiles(items);
 
       if (validFiles.length === 0) {
         return {
@@ -389,7 +350,7 @@ class PDFMerger {
 
       // If there's only one valid file, simply copy it with the new name
       if (validFiles.length === 1) {
-        const result = await this.copySinglePdfFile(
+        const result = await PDFMerger.copySinglePdfFile(
           validFiles[0],
           outputFileName,
           outputFolder
@@ -400,18 +361,19 @@ class PDFMerger {
         return result;
       }
 
-     
+      console.log(`Merging ${validFiles.length} PDFs...`);
+      
       // Process in batches if we have a large number of files
       let pdfData;
       if (validFiles.length > 10) {
         console.log("Large number of PDFs detected, processing in smaller batches");
-        pdfData = await this.processPDFsInBatches(validFiles, 5);
+        pdfData = await PDFMerger.processPDFsInBatches(validFiles, 5);
       } else {
         // For smaller file sets, just merge directly
-        pdfData = await this.mergeMultiplePdfFiles(validFiles);
+        pdfData = await PDFMerger.mergeMultiplePdfFiles(validFiles);
       }
       
-      if (!pdfData || !pdfData.bytes || pdfData.bytes.length === 0) {
+      if (!pdfData || !pdfData.base64 || pdfData.base64.length === 0) {
         console.error("Error: No PDF data returned from merge operation");
         return {
           success: false,
@@ -420,11 +382,11 @@ class PDFMerger {
         };
       }
       
-      console.log(`Successfully merged PDFs with byte length: ${pdfData.bytes.length}, saving to Drive with name: ${outputFileName}`);
+      console.log(`Successfully merged PDFs with base64 length: ${pdfData.base64.length}, saving to Drive with name: ${outputFileName}`);
 
       try {
         // Save the merged PDF to Drive
-        const fileInfo = this.saveResultingPdf(
+        const fileInfo = PDFMerger.saveResultingPdf(
           pdfData,
           outputFileName,
           outputFolder
@@ -464,7 +426,7 @@ class PDFMerger {
    * @param {boolean} [recursive=false] - Whether to search in subfolders recursively
    * @returns {Promise<Object>} Object with results of the merge operations
    */
-  async mergePDFsFromPrefixSheet(
+  static async mergePDFsFromPrefixSheet(
     sourceFolder,
     outputFolder = null,
     recursive = false
@@ -535,7 +497,7 @@ class PDFMerger {
         }
 
         // Merge PDFs for this category
-        const mergeResult = await this.mergePDFs(
+        const mergeResult = await PDFMerger.mergePDFs(
           fileIds,
           outputFileName,
           outputFolder
@@ -569,7 +531,7 @@ class PDFMerger {
    * @param {boolean} [recursive=false] - Whether to search in subfolders recursively
    * @returns {Promise<Object>} Object with results of the merge operations for each student
    */
-  async mergePDFsForAllStudents(
+  static async mergePDFsForAllStudents(
     studentData,
     destinationFolderId,
     recursive = false
@@ -614,7 +576,7 @@ class PDFMerger {
           );
 
           // Run the merge operation for this student's folder
-          const mergeResult = await this.mergePDFsFromPrefixSheet(
+          const mergeResult = await PDFMerger.mergePDFsFromPrefixSheet(
             sourceFolder,
             mergedPDFsFolder,
             recursive
@@ -651,10 +613,3 @@ class PDFMerger {
     }
   }
 }
-
-/**
- * Static instance property for the PDFMerger singleton
- * @type {PDFMerger|null}
- * @private
- */
-PDFMerger._instance = null;

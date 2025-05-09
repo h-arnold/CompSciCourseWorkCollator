@@ -70,20 +70,28 @@ class DriveManager {
      * Creates a folder in the specified parent folder
      * @param {string|Folder} parentFolderIdOrFolder - The parent folder ID or Folder object
      * @param {string} folderName - The name of the folder to create
+     * @param {string|Folder} [destinationParentFolder=null] - Optional destination parent folder ID or Folder object
      * @returns {Folder} The created folder
      */
-    static createFolderInParentFolder(parentFolderIdOrFolder, folderName) {
+    static createFolder(parentFolderIdOrFolder, folderName, destinationParentFolder = null) {
       // Convert string ID to Folder object if needed
       const parentFolder = typeof parentFolderIdOrFolder === 'string'
         ? DriveApp.getFolderById(parentFolderIdOrFolder)
         : parentFolderIdOrFolder;
         
+      // If a destination parent folder is provided, use it instead
+      const targetParentFolder = destinationParentFolder 
+        ? (typeof destinationParentFolder === 'string' 
+            ? DriveApp.getFolderById(destinationParentFolder) 
+            : destinationParentFolder)
+        : parentFolder;
+        
       // Check if the folder already exists and get user confirmation if needed
-      if (this.checkAndHandleExistingFolder(parentFolder, folderName)) {
-        return parentFolder.createFolder(folderName);
+      if (this.checkAndHandleExistingFolder(targetParentFolder, folderName)) {
+        return targetParentFolder.createFolder(folderName);
       }
       // If the folder exists and the user chose not to replace it, find and return the existing folder
-      return parentFolder.getFoldersByName(folderName).next();
+      return targetParentFolder.getFoldersByName(folderName).next();
     }
     
     /**
@@ -194,11 +202,19 @@ class DriveManager {
     static copyGoogleDocAsPdf(file, folder, prependString) {
       const pdfBlob = file.getAs("application/pdf");
       // Append '.pdf' to the original name for clarity.
-      const newFileName = `${prependString}_${file.getName()}.pdf`;
-      if (this.checkAndHandleExistingFile(folder, newFileName)) {
-        folder.createFile(pdfBlob).setName(newFileName);
-        console.log(`Document "${file.getName()}" (converted to PDF) copied as "${newFileName}".`);
+      let newFilename;
+
+      if (!prependString) {
+        newFilename = `${file.getName()}.pdf`
+      } else {
+        newFilename = `${prependString}_${file.getName()}.pdf`;
       }
+
+      if (this.checkAndHandleExistingFile(folder, newFilename)) {
+        const file = folder.createFile(pdfBlob).setName(newFilename);
+        console.log(`Document "${file.getName()}" (converted to PDF) copied as "${newFilename}".`);
+      }
+      return file;
     }
     
     /**
@@ -315,31 +331,5 @@ class DriveManager {
         return driveFile.makeCopy(newFileName, folder);
       }
       return null;
-    }
-    
-    /**
-     * Converts a Google Docs file to a PDF
-     * @param {string|File} fileIdOrFile - The ID of the Drive file or a File object
-     * @param {string} [newFileName=null] - Optional new name for the PDF file (without extension)
-     * @return {File} The converted PDF file
-     */
-    static convertToPdf(fileIdOrFile, newFileName = null) {
-      // Handle whether we received a string ID or a File object
-      const driveFile = typeof fileIdOrFile === 'string' 
-        ? DriveApp.getFileById(fileIdOrFile) 
-        : fileIdOrFile;
-      
-      const blob = driveFile.getAs('application/pdf');
-      
-      // Set the PDF filename, either using the provided name or the original filename
-      let pdfFileName;
-      if (newFileName) {
-        pdfFileName = `${newFileName}.pdf`;
-      } else {
-        pdfFileName = `${driveFile.getName()}.pdf`;
-      }
-      
-      const pdfFile = DriveApp.createFile(blob).setName(pdfFileName);
-      return pdfFile;
     }
 }
