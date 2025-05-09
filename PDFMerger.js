@@ -576,15 +576,14 @@ class PDFMerger {
   ) {
     try {
       const headers = studentData[0];
-      const folderIdColumnIndex =
-        headers.findIndex((header) => header.toLowerCase().includes("folder")) ||
-        2; // Default to 3rd column (index 2)
+      const folderIdColumnIndex =  2
+
       const nameColumnIndex = 0; // Assume name is in the first column
 
       const studentResults = [];
 
       // Process each student row (skip header row)
-      for (let row = 1; row < studentData.length; row++) {
+      for (let row = 3; row < studentData.length; row++) {
         const studentName = studentData[row][nameColumnIndex];
         const sourceFolderId = studentData[row][folderIdColumnIndex];
         const destinationFolderName = studentData[row][3]; // 3rd column from studentData should be the destination folder name.
