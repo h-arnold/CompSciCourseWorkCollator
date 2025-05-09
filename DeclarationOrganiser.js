@@ -165,34 +165,102 @@ class DeclarationProcessor {
   }
 
   /**
+   * Checks which declaration files are available and determines which files to use
+   * for the merge process
+   * @private
+   * @return {Object} Object containing information about available files and merge requirements
+   */
+  _checkDeclarationFilesAvailability() {
+    let hasGClassroomFile = this.gClassroomDeclarationFile;
+    let hasStudentFolderFile = this.studentFolderDeclarationFile;
+
+    // If we get an error when trying to get an Id for either file, then the file is missing.
+    
+    try {
+      this.gClassroomDeclarationFile.getId();
+    } catch (e) {
+      hasClassroomFile = null
+      console.error(`Unable to find declaration file on Google Classroom. Error message: ${e.message}`)
+    }
+
+    try {
+      this.studentFolderDeclarationFile.getId();
+    } catch (e) {
+      hasStudentFolderFile = null
+      console.error(`Unable to find declaration file on Google Classroom. Error message: ${e.message}`)
+    }
+     
+
+    
+    console.log(`Declaration files available - Google Classroom: ${hasGClassroomFile}, Student Folder: ${hasStudentFolderFile}`);
+    
+    let baseFile = null, sourceFile = null;
+    let isMergeNeeded = false;
+    
+    if (hasGClassroomFile && hasStudentFolderFile) {
+      // Both files exist, so we need to perform a merge
+      baseFile = this.gClassroomDeclarationFile;
+      sourceFile = this.studentFolderDeclarationFile;
+      isMergeNeeded = true;
+    } else if (hasGClassroomFile) {
+      // Only Google Classroom file exists
+      console.log(`Only Google Classroom declaration file exists (ID: ${this.gClassroomDeclarationFile.getId()}). Using it directly.`);
+      baseFile = this.gClassroomDeclarationFile;
+    } else if (hasStudentFolderFile) {
+      // Only student folder file exists
+      console.log(`Only student folder declaration file exists (ID: ${this.studentFolderDeclarationFile.getId()}). Using it directly.`);
+      baseFile = this.studentFolderDeclarationFile;
+    }
+    
+    return {
+      hasGClassroomFile,
+      hasStudentFolderFile,
+      baseFile,
+      sourceFile,
+      isMergeNeeded,
+      canProceed: hasGClassroomFile || hasStudentFolderFile
+    };
+  }
+
+  /**
    * Merges table data from a source document into a copy of a base document.
    * Specifically targets 'Title of Task:' and 'TOTAL' tables.
    * The copy of the base document is placed in the same folder as the source document.
-   * @param {string} gClassroomDeclarationFileId - The ID of the Google Doc to copy and merge into.
-   * @param {string} studentFolderDeclarationFileId - The ID of the Google Doc containing the table data to merge.
+   * If either file is missing, it will proceed with the available file.
    * @param {string} mergedFileName - The desired name for the newly created merged document.
-   * @return {string|null} The ID of the newly created merged document, or null on failure.
+   * @return {Object|null} The Google Drive File object of the newly created document, or null on failure.
    */
   mergeDeclarations(mergedFileName) {
-    console.log(`Starting merge process: Google Classroom Doc ID: ${this.gClassroomDeclarationFile.getId()}, Student Folder Doc ID: ${this.studentFolderDeclarationFile.getId()}, New Filename: ${mergedFileName}`);
-
-    // Determine the destination folder (parent of the source document)
-    let destinationFolderId = null;
-    try {
-        const parents = this.studentFolderDeclarationFile.getParents();
-        if (parents.hasNext()) {
-            destinationFolderId = parents.next().getId();
-            console.log(`Target destination folder ID (from source doc parent): ${destinationFolderId}`);
-        } else {
-            console.warn(`Source document ${studentFolderDeclarationFileId} has no parent folder. Copy will be placed relative to base document or in root.`);
-        }
-    } catch (e) {
-        console.error(`Error getting parent folder for source document ${studentFolderDeclarationFileId}: ${e}. Copy will be placed relative to base document or in root.`);
+    // Use the helper method to check file availability
+    const fileAvailability = this._checkDeclarationFilesAvailability();
+    
+    // If neither file exists, return null as we can't proceed
+    if (!fileAvailability.canProceed) {
+      console.error("Both declaration files are missing. Cannot proceed with merge.");
+      return null;
+    }
+    
+    if (fileAvailability.isMergeNeeded) {
+      console.log(`Starting merge process: Google Classroom Doc ID: ${this.gClassroomDeclarationFile.getId()}, Student Folder Doc ID: ${this.studentFolderDeclarationFile.getId()}, New Filename: ${mergedFileName}`);
     }
 
+    // Determine the destination folder
+    let destinationFolderId = null;
+    try {
+      const fileForParent = fileAvailability.hasStudentFolderFile ? this.studentFolderDeclarationFile : this.gClassroomDeclarationFile;
+      const parents = fileForParent.getParents();
+      if (parents.hasNext()) {
+        destinationFolderId = parents.next().getId();
+        console.log(`Target destination folder ID: ${destinationFolderId}`);
+      } else {
+        console.warn(`Source document has no parent folder. Copy will be placed in root.`);
+      }
+    } catch (e) {
+      console.error(`Error getting parent folder: ${e}. Copy will be placed in root.`);
+    }
 
-    // 1. Create a copy of the base document in the source document's folder
-    const mergedDoc = DriveManager.copyDocument(this.gClassroomDeclarationFile, mergedFileName, destinationFolderId);
+    // Create a copy of the base document in the destination folder
+    const mergedDoc = DriveManager.copyDocument(fileAvailability.baseFile, mergedFileName, destinationFolderId);
     if (!mergedDoc) {
       console.error("Failed to create a copy of the base document. Aborting merge.");
       return null;
@@ -200,41 +268,45 @@ class DeclarationProcessor {
     const mergedDocId = mergedDoc.getId();
     console.log(`Created copy of base document with ID: ${mergedDocId}`);
 
-    // 2. Extract data from source document tables
-    const titleTableData = this.textProcessor.extractTableText(this.studentFolderDeclarationFile, "Title of Task:");
-    const totalTableData = this.textProcessor.extractTableText(this.studentFolderDeclarationFile, "TOTAL");
+    // If no merge is needed, we're done
+    if (!fileAvailability.isMergeNeeded) {
+      console.log(`No merge needed. Successfully created document: ${mergedFileName} (ID: ${mergedDocId})`);
+      return mergedDoc;
+    }
+
+    // If merge is needed, proceed with extracting and replacing table data
+    const titleTableData = this.textProcessor.extractTableText(fileAvailability.sourceFile, "Title of Task:");
+    const totalTableData = this.textProcessor.extractTableText(fileAvailability.sourceFile, "TOTAL");
 
     if (!titleTableData) {
-        console.warn(`Could not extract 'Title of Task:' table data from source doc ${studentFolderDeclarationFileId.getId()}.`);
+      console.warn(`Could not extract 'Title of Task:' table data from source doc ${fileAvailability.sourceFile.getId()}.`);
     }
     if (!totalTableData) {
-        console.warn(`Could not extract 'TOTAL' table data from source doc ${studentFolderDeclarationFileId.getId()}.`);
+      console.warn(`Could not extract 'TOTAL' table data from source doc ${fileAvailability.sourceFile.getId()}.`);
     }
 
-    // 3. Replace data in the new (merged) document tables
+    // Replace data in the new (merged) document tables
     let success = true;
     if (titleTableData) {
-        success = this.textProcessor.replaceTableText(mergedDoc, "Title of Task:", titleTableData) && success;
+      success = this.textProcessor.replaceTableText(mergedDoc, "Title of Task:", titleTableData) && success;
     } else {
-        console.log("Skipping replacement for 'Title of Task:' table as no data was extracted.");
+      console.log("Skipping replacement for 'Title of Task:' table as no data was extracted.");
     }
 
     if (totalTableData) {
-        success = this.textProcessor.replaceTableText(mergedDoc, "TOTAL", totalTableData) && success;
+      success = this.textProcessor.replaceTableText(mergedDoc, "TOTAL", totalTableData) && success;
     } else {
-        console.log("Skipping replacement for 'TOTAL' table as no data was extracted.");
+      console.log("Skipping replacement for 'TOTAL' table as no data was extracted.");
     }
-
 
     if (success) {
       console.log(`Successfully merged tables into new document: ${mergedFileName} (ID: ${mergedDocId})`);
-      // Optional: Clean up studentFolderDeclarationFileId or gClassroomDeclarationFileId if needed (e.g., trash them)
       return mergedDoc;
     } else {
       console.error(`Failed to merge one or more tables into document: ${mergedFileName} (ID: ${mergedDocId}). Check logs for details.`);
       // Optionally trash the merged document if the merge failed
-        DriveApp.getFileById(mergedDocId).setTrashed(true);
-        console.log(`Trashed partially merged document ${mergedDocId} due to errors.`);
+      DriveApp.getFileById(mergedDocId).setTrashed(true);
+      console.log(`Trashed partially merged document ${mergedDocId} due to errors.`);
       return null;
     }
   }
