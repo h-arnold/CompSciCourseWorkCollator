@@ -34,19 +34,19 @@ class DeclarationProcessor {
    */
   findFirstGoogleDocAttachment(submission) {
     const attachments = submission.assignmentSubmission.attachments || [];
-    
+
     for (const attachment of attachments) {
       if (attachment.driveFile) {
         //Check that the attachment is a Google Drive File
         const file = DriveApp.getFileById(attachment.driveFile.id);
-        
+
         // Check if the file is a Google Doc
         if (DriveManager.isGoogleDoc(file)) {
           return file;
         }
       }
     }
-    
+
     return null;
   }
 
@@ -66,24 +66,24 @@ class DeclarationProcessor {
   createFinalDeclarationForms(assignmentTitle, studentFolderData) {
     const courseId = studentFolderData[0][0]; // Get the courseId from the first row
     const assignmentId = ClassroomManager.getAssignmentId(courseId, assignmentTitle);
-    
+
     if (!assignmentId) {
       SpreadsheetApp.getUi().alert('Invalid Google Classroom Assignment title or access denied.');
       return;
     }
-    
-    
+
+
     studentFolderData.forEach((studentDataRow, index) => {
       if (index < 3) return; // Skip the header rows
-      
+
       const name = studentDataRow[0];
       const userId = studentDataRow[1];
       const folderId = studentDataRow[2];
 
       // Initialise a student sample prefixes array for creating the sample folders later.
 
-    
-      
+
+
       if (!folderId) {
         console.log(`No folder ID found for user ${userId}`);
         return;
@@ -93,21 +93,21 @@ class DeclarationProcessor {
 
       // Get the declaration and marking grid files
       this.studentFolderDeclarationFile = DriveManager.findFilesBySubstring(
-        studentFolder, 
-        "Declaration", 
-        false, 
+        studentFolder,
+        "Declaration",
+        false,
         "application/vnd.google-apps.document",
         "suffix");
-        
-      this.studentMarkingGridFile = DriveManager.findFilesBySubstring(      
-        studentFolder, 
-        "Marking Grid", 
-        false, 
+
+      this.studentMarkingGridFile = DriveManager.findFilesBySubstring(
+        studentFolder,
+        "Marking Grid",
+        false,
         "application/vnd.google-apps.document",
         "suffix");
 
       const submissions = ClassroomManager.getStudentSubmissions(courseId, assignmentId, userId);
-      
+
       submissions.forEach(submission => {
         // Find the first Google Doc attachment
         this.gClassroomDeclarationFile = this.findFirstGoogleDocAttachment(submission);
@@ -116,28 +116,29 @@ class DeclarationProcessor {
           console.error(`No Google Doc attachment found for user ${name}`);
           throw new Error(`No Google Doc attachment found for user ${name}`);
         }
-        
+
         console.log(`Found Google Doc attachment for user ${name}`);
         const prefixAndFilename = this.generateStudentSubmissionPrefixAndFilename(name)
 
-          // Now that we have all the files we need, create the final PDF.
-          this.createFinalDeclarationPDF(
-            name,
-            prefixAndFilename.fileName, 
-            studentFolder
-          );
+        // Now that we have all the files we need, create the final PDF.
+        this.createFinalDeclarationPDF(
+          name,
+          prefixAndFilename.fileName,
+          studentFolder
+        );
 
-          studentDataRow.push(prefixAndFilename.studentSubmissionPrefix)
+        studentDataRow.push(prefixAndFilename.studentSubmissionPrefix)
 
-          return studentFolderData//TODO: Come up with a more elegant way to get the submission prefix than buried down here.
-        
+
+
       });
+
     });
-    
+    return studentFolderData//TODO: Come up with a more elegant way to get the submission prefix than buried down here.
 
 
   }
-  
+
   /**
    * Generates a filename for a declaration document according to the 
    * WJEC required convention which is:
@@ -147,7 +148,7 @@ class DeclarationProcessor {
    */
   generateStudentSubmissionPrefixAndFilename(name) {
     const { CandidateNo, CentreNo } = this.textProcessor.getCandidateAndCentreNo(this.gClassroomDeclarationFile)
-  
+
     if (CandidateNo && CentreNo) {
       console.log(`Candidate number ${CandidateNo} and Centre number ${CentreNo} found in document.`);
       const studentSubmissionPrefix = this.textProcessor.createStudentSubmissionPrefix(CentreNo, CandidateNo, name);
@@ -175,7 +176,7 @@ class DeclarationProcessor {
     let hasStudentFolderFile = this.studentFolderDeclarationFile;
 
     // If we get an error when trying to get an Id for either file, then the file is missing.
-    
+
     try {
       this.gClassroomDeclarationFile.getId();
     } catch (e) {
@@ -189,14 +190,14 @@ class DeclarationProcessor {
       hasStudentFolderFile = null
       console.error(`Unable to find declaration file on Google Classroom. Error message: ${e.message}`)
     }
-     
 
-    
+
+
     console.log(`Declaration files available - Google Classroom: ${hasGClassroomFile}, Student Folder: ${hasStudentFolderFile}`);
-    
+
     let baseFile = null, sourceFile = null;
     let isMergeNeeded = false;
-    
+
     if (hasGClassroomFile && hasStudentFolderFile) {
       // Both files exist, so we need to perform a merge
       baseFile = this.gClassroomDeclarationFile;
@@ -211,7 +212,7 @@ class DeclarationProcessor {
       console.log(`Only student folder declaration file exists (ID: ${this.studentFolderDeclarationFile.getId()}). Using it directly.`);
       baseFile = this.studentFolderDeclarationFile;
     }
-    
+
     return {
       hasGClassroomFile,
       hasStudentFolderFile,
@@ -233,13 +234,13 @@ class DeclarationProcessor {
   mergeDeclarations(mergedFileName) {
     // Use the helper method to check file availability
     const fileAvailability = this._checkDeclarationFilesAvailability();
-    
+
     // If neither file exists, return null as we can't proceed
     if (!fileAvailability.canProceed) {
       console.error("Both declaration files are missing. Cannot proceed with merge.");
       return null;
     }
-    
+
     if (fileAvailability.isMergeNeeded) {
       console.log(`Starting merge process: Google Classroom Doc ID: ${this.gClassroomDeclarationFile.getId()}, Student Folder Doc ID: ${this.studentFolderDeclarationFile.getId()}, New Filename: ${mergedFileName}`);
     }
@@ -319,27 +320,27 @@ class DeclarationProcessor {
    */
   createFinalDeclarationPDF(name, mergedFileName, folder) {
     console.log(`Starting merge and process workflow for ${name}`);
-  
-    
+
+
     // 1. Merge the two documents
     const mergedDeclarationFile = this.mergeDeclarations(mergedFileName);
-  
+
     if (!mergedDeclarationFile) {
       console.error(`Failed to merge declarations for ${name}. Skipping PDF conversion.`);
       return null;
     }
-  
+
     // 2. Convert the merged document and marking grid to PDF
     let filesToMerge = [];
     const mergedDeclarationPdf = DriveManager.copyGoogleDocAsPdf(mergedDeclarationFile, folder);
     filesToMerge.push(mergedDeclarationPdf);
-    
+
     const markingGridPdf = DriveManager.copyGoogleDocAsPdf(this.studentMarkingGridFile, folder);
     filesToMerge.push(markingGridPdf);
-  
+
     // 4. Merge the PDFs
     const finalMergedPDF = PDFMerger.getInstance().mergePDFs(filesToMerge, mergedFileName, folder);
-  
+
     return finalMergedPDF;
   }
 }
@@ -357,9 +358,9 @@ function processDeclarationsOnly() {
   );
 
   if (assignmentTitleResponse.getSelectedButton() === ui.Button.OK) {
-    const assignmentTitle = assignmentTitleResponse.getResponseText().trim(); 
-    
-    
+    const assignmentTitle = assignmentTitleResponse.getResponseText().trim();
+
+
     try {
       // Get the data from the Student Info sheet
       const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Student Info");
@@ -367,23 +368,23 @@ function processDeclarationsOnly() {
         UIManager.showAlert('Student Info sheet not found. Please run "Get names and IDs" first.');
         return;
       }
-      
+
       const data = sheet.getDataRange().getValues();
-      
+
       // Create a separate array with courseId at the beginning
       const courseInfoSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Course Info");
       if (!courseInfoSheet) {
         UIManager.showAlert('Course Info sheet not found. Please run "Get names and IDs" first.');
         return;
       }
-      
+
       const courseId = courseInfoSheet.getRange(1, 2).getValue();
       const processData = [[courseId]].concat([[""]]).concat(data); // Add courseId and a blank row
-      
+
       // Process the declarations
       const declarationProcessor = new DeclarationProcessor();
       declarationProcessor.createFinalDeclarationForms(assignmentTitle, processData);
-      
+
       UIManager.showAlert('Processing declarations completed.');
     } catch (e) {
       UIManager.showAlert(`Error: ${e.message}`);
