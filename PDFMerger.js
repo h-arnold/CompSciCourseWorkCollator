@@ -12,7 +12,7 @@ class PDFMerger {
     }
     return PDFMerger._instance;
   }
-  
+
   /**
    * Private constructor to prevent direct instantiation
    * Use PDFMerger.getInstance() instead
@@ -23,14 +23,14 @@ class PDFMerger {
       console.warn('PDFMerger is a singleton. Use PDFMerger.getInstance() instead of new PDFMerger()');
       return PDFMerger._instance;
     }
-    
+
     /**
      * Default destination folder for merged PDFs
      * @type {Folder|null}
      */
     this.destinationFolder = null;
     this.pdfLib = this.loadPdfLib();
-    
+
     // Set this as the singleton instance
     PDFMerger._instance = this;
   }
@@ -200,7 +200,7 @@ class PDFMerger {
 
     // Create a new PDF document
     const pdfDoc = await PDFLib.PDFDocument.create();
-    
+
     let totalPages = 0;
 
     // Add each valid PDF to the merged document
@@ -213,15 +213,15 @@ class PDFMerger {
         // Load the PDF document using base64 string
         const pdfStudentData = await PDFLib.PDFDocument.load(new Uint8Array(fileBlob)
         );
-        
+
         // Get page indices and copy them
         const pageCount = pdfStudentData.getPageCount();
         const pageIndices = [...Array(pageCount)].map((_, i) => i);
         totalPages += pageCount;
-        
+
         console.log(`Copying ${pageCount} pages from ${file.getName()}`);
         const pages = await pdfDoc.copyPages(pdfStudentData, pageIndices);
-        
+
         // Add pages to the output document
         pages.forEach((page) => pdfDoc.addPage(page));
       } catch (e) {
@@ -231,12 +231,12 @@ class PDFMerger {
     }
 
     console.log(`Merged document has ${totalPages} pages. Saving...`);
-    
+
     try {
       // Save the document as bytes
       const pdfBytes = await pdfDoc.save();
       console.log(`Successfully saved PDF, byte length: ${pdfBytes.length}`);
-      
+
       // Return only the bytes
       return {
         bytes: pdfBytes
@@ -256,44 +256,44 @@ class PDFMerger {
    */
   async processPDFsInBatches(files, batchSize = 5) {
     console.log(`Processing ${files.length} files in batches of ${batchSize}`);
-    
+
     // If there are fewer files than the batch size, just process them directly
     if (files.length <= batchSize) {
       return await this.mergeMultiplePdfFiles(files);
     }
-    
+
     // Create temporary storage for output files
     const tempFiles = [];
     const parentFolderForTempFiles = this.destinationFolder || DriveApp.getRootFolder();
-    
+
     try {
       // Process files in batches
       for (let i = 0; i < files.length; i += batchSize) {
         const end = Math.min(i + batchSize, files.length);
         const batch = files.slice(i, end);
-        console.log(`Processing batch ${Math.floor(i/batchSize) + 1}: files ${i+1} to ${end}`);
-        
+        console.log(`Processing batch ${Math.floor(i / batchSize) + 1}: files ${i + 1} to ${end}`);
+
         // Merge this batch into a temporary PDF
         const batchData = await this.mergeMultiplePdfFiles(batch);
-        
+
         // Save it as a temporary file in Drive root
-        const tempName = `temp_batch_${Math.floor(i/batchSize) + 1}_of_${Math.ceil(files.length/batchSize)}.pdf`;
+        const tempName = `temp_batch_${Math.floor(i / batchSize) + 1}_of_${Math.ceil(files.length / batchSize)}.pdf`;
         const tempBlob = Utilities.newBlob(
           batchData.bytes, // Use bytes directly
           MimeType.PDF,
           tempName
         );
-        
+
         const tempFile = parentFolderForTempFiles.createFile(tempBlob);
         tempFiles.push(tempFile);
         console.log(`Created temporary file: ${tempFile.getName()} (${tempFile.getId()}) in folder ${parentFolderForTempFiles.getName()}`);
       }
-      
+
       console.log(`Created ${tempFiles.length} temporary files, now merging them`);
-      
+
       // Now merge all temporary files
       const finalData = await this.mergeMultiplePdfFiles(tempFiles);
-      
+
       // Clean up temp files
       tempFiles.forEach(file => {
         try {
@@ -303,12 +303,12 @@ class PDFMerger {
           console.warn(`Failed to delete temporary file ${file.getName()}: ${e.message}`);
         }
       });
-      
+
       return finalData;
     } catch (e) {
       console.error(`Error in batch processing: ${e.message}`);
       console.error(e.stack);
-      
+
       // Try to clean up temp files even if there was an error
       tempFiles.forEach(file => {
         try {
@@ -317,7 +317,7 @@ class PDFMerger {
           console.warn(`Failed to delete temporary file during cleanup: ${cleanupErr.message}`);
         }
       });
-      
+
       throw e;
     }
   }
@@ -331,15 +331,15 @@ class PDFMerger {
    */
   saveResultingPdf(pdfData, outputFileName, outputFolder = null) {
     console.log(`Saving PDF to Drive with filename: ${outputFileName}`);
-    
+
     // Get the PDF file bytes directly
     const bytes = pdfData.bytes;
     console.log(`Using PDF data with ${bytes.length} bytes`);
-    
+
     // Create Blob
     const blob = Utilities.newBlob(bytes, MimeType.PDF, outputFileName);
     console.log(`Created blob with size: ${blob.getBytes().length} bytes`);
-    
+
     let newFile;
     const effectiveOutputFolder = outputFolder || this.destinationFolder;
 
@@ -352,7 +352,7 @@ class PDFMerger {
       console.log("Saving to root folder");
       newFile = DriveApp.createFile(blob);
     }
-    
+
     console.log(`File created with id: ${newFile.getId()}`);
     return {
       id: newFile.getId(),
@@ -398,7 +398,7 @@ class PDFMerger {
         return result;
       }
 
-     
+
       // Process in batches if we have a large number of files
       let pdfData;
       if (validFiles.length > 10) {
@@ -408,7 +408,7 @@ class PDFMerger {
         // For smaller file sets, just merge directly
         pdfData = await this.mergeMultiplePdfFiles(validFiles);
       }
-      
+
       if (!pdfData || !pdfData.bytes || pdfData.bytes.length === 0) {
         console.error("Error: No PDF data returned from merge operation");
         return {
@@ -417,7 +417,7 @@ class PDFMerger {
           invalidFiles: invalidFiles.length > 0 ? invalidFiles : null,
         };
       }
-      
+
       console.log(`Successfully merged PDFs with byte length: ${pdfData.bytes.length}, saving to Drive with name: ${outputFileName}`);
 
       try {
@@ -437,7 +437,7 @@ class PDFMerger {
       } catch (saveError) {
         console.error(`Error saving merged PDF: ${saveError.message}`);
         console.error(saveError.stack);
-        
+
         // Try an alternative save approach for large files
         return {
           success: false,
@@ -453,6 +453,71 @@ class PDFMerger {
         message: `Error merging PDFs: ${e.message}`,
       };
     }
+  }
+
+  /**
+   * Copies zip files that match given prefixes to an output folder
+   * @param {Folder} sourceFolder - Folder containing the zip files to copy
+   * @param {string[]} prefixes - Array of prefixes to match against filenames
+   * @param {string} categoryName - Name of the category (used for output filename)
+   * @param {Folder} outputFolder - Folder to save the copied zip files
+   * @param {boolean} [recursive=false] - Whether to search in subfolders recursively
+   * @returns {Object[]} Array of copied zip file information
+   */
+  copyMatchingZipFiles(sourceFolder, prefixes, categoryName, outputFolder, recursive = false) {
+    // Look for zip files with the prefixes
+    const zipFiles = DriveManager.findFilesBySubstring(
+        sourceFolder,
+        prefixes,
+        recursive,
+        ["application/zip", "application/x-zip-compressed"],
+        "prefix"
+      )
+
+    // If we found zip files, copy them to the output folder
+    if (zipFiles.length > 0) {
+      console.log(`Found ${zipFiles.length} zip files matching prefixes for category "${categoryName}"`);
+      const zipOutputFileName = `${categoryName}.zip`;
+
+      // If there's only one zip file, just copy and rename it
+      if (zipFiles.length === 1) {
+        try {
+
+          if (outputFolder) {
+            const copiedZip = DriveManager.copyAndRenameFile(
+              zipFiles[0],
+              outputFolder,
+              zipOutputFileName
+            );
+            zipFiles.push(copiedZip);
+            console.log(`Copied zip file: ${zipFile.getName()} to ${zipOutputFileName}`);
+          }
+        } catch (e) {
+          console.error(`Error copying zip file: ${e.message}`);
+        }
+      } else {
+        // If we have multiple zip files, we'll handle each one separately
+        // by appending an index to the filename
+        for (let i = 0; i < zipFiles.length; i++) {
+          try {
+            if (outputFolder) {
+              const indexedZipFileName = `${categoryName}_${i + 1}.zip`;
+              const copiedZip = DriveManager.copyAndRenameFile(
+                zipFiles[i],
+                outputFolder,
+                indexedZipFileName
+              );
+              zipFiles.push(copiedZip);
+              console.log(`Copied zip file: ${zipFile.getName()} to ${indexedZipFileName}`);
+            }
+          } catch (e) {
+            console.error(`Error copying zip file: ${e.message}`);
+          }
+        }
+      }
+    }
+
+    return zipFiles;
   }
 
   /**
@@ -539,6 +604,27 @@ class PDFMerger {
           outputFolder
         );
 
+        // NOTE: I know this is sloppy and doesn't separate concerns, but it'll do for now.
+        // TODO: Fix this for the 2026 Sample submission.
+
+        // Handle zip files using the dedicated method
+        const zipFiles = this.copyMatchingZipFiles(
+          sourceFolder,
+          prefixes,
+          headers[col],
+          outputFolder,
+          recursive
+        );
+
+        // Add zip file info to the merge result if any were copied
+        if (zipFiles.length > 0) {
+          mergeResult.zipFiles = zipFiles.map(file => ({
+            id: file.getId(),
+            name: file.getName(),
+            url: file.getUrl(),
+          }));
+        }
+
         // Store the result with category info
         results.push({
           category: headers[col],
@@ -575,23 +661,23 @@ class PDFMerger {
       // Find the front sheet file using the provided pattern
       const frontSheetFile = DriveManager.handleSingleEntryFileArray(
         DriveManager.findFilesBySubstring(
-          sourceFolder, 
-          fileNamePattern, 
-          false, 
-          ["application/pdf"], 
+          sourceFolder,
+          fileNamePattern,
+          false,
+          ["application/pdf"],
           "contains"
         )
       );
-      
+
       if (!frontSheetFile) {
         console.warn(`Front sheet matching pattern "${fileNamePattern}" not found in folder ${sourceFolder.getName()}`);
         return null;
       }
-      
+
       // Copy the file to the destination folder
       const newFile = frontSheetFile.makeCopy(destinationFolder); //No point in using `DriveManager` for a simple copy operation
       console.log(`Copied front sheet ${frontSheetFile.getName()} to ${destinationFolder.getName()}`);
-      
+
       return newFile;
     } catch (e) {
       console.error(`Error copying front sheet: ${e.message}`);
@@ -612,8 +698,7 @@ class PDFMerger {
     recursive = false
   ) {
     try {
-      const headers = studentData[0];
-      const folderIdColumnIndex =  2
+      const folderIdColumnIndex = 2
 
       const nameColumnIndex = 0; // Assume name is in the first column
 
