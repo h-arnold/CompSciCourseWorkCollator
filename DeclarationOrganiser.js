@@ -92,12 +92,15 @@ class DeclarationProcessor {
       const studentFolder = DriveApp.getFolderById(folderId);
 
       // Get the declaration and marking grid files
-      this.studentFolderDeclarationFile = DriveManager.findFilesBySubstring(
+      // Uses `handleSingleEntryFileArray to ensure that a single file object is returned.
+      this.studentFolderDeclarationFile = DriveMAnager.handleSingleEntryFileArray(
+        DriveManager.findFilesBySubstring(
         studentFolder,
         "Declaration",
         false,
         "application/vnd.google-apps.document",
-        "suffix");
+        "suffix")
+      );
 
       this.studentMarkingGridFile = DriveManager.findFilesBySubstring(
         studentFolder,

@@ -12,9 +12,12 @@ class DriveManager {
     static copyDocument(sourceFileIdOrFile, newName, destinationFolderIdOrFolder = null) {
       try {
         // Handle whether we received a string ID or a File object
-        const sourceFile = typeof sourceFileIdOrFile === 'string' 
+        let sourceFile = typeof sourceFileIdOrFile === 'string' 
           ? DriveApp.getFileById(sourceFileIdOrFile) 
           : sourceFileIdOrFile;
+        
+        // Normalize the file object
+        sourceFile = this.handleSingleEntryFileArray(sourceFile);
 
         // Ensure it's a Google Doc
         if (sourceFile.getMimeType() !== MimeType.GOOGLE_DOCS) {
@@ -70,28 +73,20 @@ class DriveManager {
      * Creates a folder in the specified parent folder
      * @param {string|Folder} parentFolderIdOrFolder - The parent folder ID or Folder object
      * @param {string} folderName - The name of the folder to create
-     * @param {string|Folder} [destinationParentFolder=null] - Optional destination parent folder ID or Folder object
      * @returns {Folder} The created folder
      */
-    static createFolder(parentFolderIdOrFolder, folderName, destinationParentFolder = null) {
+    static createFolder(parentFolderIdOrFolder, folderName) {
       // Convert string ID to Folder object if needed
       const parentFolder = typeof parentFolderIdOrFolder === 'string'
         ? DriveApp.getFolderById(parentFolderIdOrFolder)
         : parentFolderIdOrFolder;
         
-      // If a destination parent folder is provided, use it instead
-      const targetParentFolder = destinationParentFolder 
-        ? (typeof destinationParentFolder === 'string' 
-            ? DriveApp.getFolderById(destinationParentFolder) 
-            : destinationParentFolder)
-        : parentFolder;
-        
       // Check if the folder already exists and get user confirmation if needed
-      if (this.checkAndHandleExistingFolder(targetParentFolder, folderName)) {
-        return targetParentFolder.createFolder(folderName);
+      if (this.checkAndHandleExistingFolder(parentFolder, folderName)) {
+        return parentFolder.createFolder(folderName);
       }
       // If the folder exists and the user chose not to replace it, find and return the existing folder
-      return targetParentFolder.getFoldersByName(folderName).next();
+      return parentFolder.getFoldersByName(folderName).next();
     }
     
     /**
@@ -186,6 +181,7 @@ class DriveManager {
      * @param {string} prependString - The string to prepend to the file name
      */
     static copyFile(file, folder, prependString) {
+      file = this.handleSingleEntryFileArray(file);
       const newFileName = `${prependString}_${file.getName()}`;
       if (this.checkAndHandleExistingFile(folder, newFileName)) {
         file.makeCopy(newFileName, folder);
@@ -200,6 +196,7 @@ class DriveManager {
      * @param {string} prependString - The string to prepend to the file name
      */
     static copyGoogleDocAsPdf(file, folder, prependString) {
+      file = this.handleSingleEntryFileArray(file);
       const pdfBlob = file.getAs("application/pdf");
       // Append '.pdf' to the original name for clarity.
       let newFilename;
@@ -224,7 +221,7 @@ class DriveManager {
      * @param {boolean} [recursive=false] - Whether to search in subfolders recursively
      * @param {string[]} [mimeTypes=null] - Optional array of MIME types to filter by (e.g., ["application/pdf"])
      * @param {string} [searchType='prefix'] - Type of search: 'prefix', 'suffix', or 'contains'
-     * @returns {File|File[]} A single File object if only one match, otherwise an array of Google Drive File objects
+     * @returns {File[]} An array of Google Drive File objects matching the criteria (empty if none found)
      */
     static findFilesBySubstring(folderIdOrFolder, substrings, recursive = false, mimeTypes = null, searchType = 'prefix') {
       try {
@@ -295,11 +292,7 @@ class DriveManager {
           }
         }
 
-        // Return matching file if the array only has one item
-        if (matchingFiles.length === 1) {
-          return matchingFiles[0];
-        }
-        
+        // Always return an array (even if only one match)
         return matchingFiles;
       } catch (e) {
         console.error(`Error finding files by substring: ${e.message}`);
@@ -317,9 +310,12 @@ class DriveManager {
      */
     static copyAndRenameFile(driveFileIdOrFile, folderIdOrFolder, newFileName) {
       // Handle whether we received a string ID or a File object
-      const driveFile = typeof driveFileIdOrFile === 'string' 
+      let driveFile = typeof driveFileIdOrFile === 'string' 
         ? DriveApp.getFileById(driveFileIdOrFile) 
         : driveFileIdOrFile;
+      
+      // Normalize the file object
+      driveFile = this.handleSingleEntryFileArray(driveFile);
       
       // Handle whether we received a string ID or a Folder object
       const folder = typeof folderIdOrFolder === 'string'
@@ -331,5 +327,19 @@ class DriveManager {
         return driveFile.makeCopy(newFileName, folder);
       }
       return null;
+    }
+
+    /**
+     * `findFilesBySubstring` will always return an array of file objects, even if only one file is found.
+     * This method normalises the input for methods that expect a single file object rather than an array.
+     * @param {File|File[]} file - The file object or array with a single file
+     * @returns {File} The normalized file object
+     */
+    static handleSingleEntryFileArray(file) {
+      // Check if the parameter is an array with a single file
+      if (Array.isArray(file) && file.length === 1) {
+        return file[0];
+      }
+      return file;
     }
 }

@@ -208,12 +208,10 @@ class PDFMerger {
       console.log(`Processing ${file.getName()} (${file.getMimeType()})`);
       try {
         // Get the PDF data as bytes
-        const fileBlob = file.getBlob();
-        const base64Content = Utilities.base64Encode(fileBlob.getBytes());
-        
+        const fileBlob = file.getBlob().getBytes();
+
         // Load the PDF document using base64 string
-        const pdfStudentData = await PDFLib.PDFDocument.load(
-          PDFLib.base64.decode(base64Content)
+        const pdfStudentData = await PDFLib.PDFDocument.load(new Uint8Array(fileBlob)
         );
         
         // Get page indices and copy them
@@ -517,7 +515,7 @@ class PDFMerger {
         );
 
         // Find all files matching these prefixes
-        const fileIds = DriveManager.getFileIdsBySubstring(
+        const fileIds = DriveManager.findFilesBySubstring(
           sourceFolder,
           prefixes,
           recursive,
@@ -563,6 +561,45 @@ class PDFMerger {
   }
 
   /**
+   * Copies a front sheet PDF from source folder to destination folder.
+   * A hacky workaround to get  the frontsheet uploaded for the A-Level Sample.
+   * There's definitely a more elegant way to handle this and it won't handle odd workflows,
+   * but it'll do for now.
+   * @param {Folder} sourceFolder - The source folder containing the front sheet
+   * @param {string} fileNamePattern - The pattern to search for in file names
+   * @param {Folder} destinationFolder - The folder to copy the front sheet to
+   * @returns {File|null} The copied file or null if not found
+   */
+  copyFrontSheet(sourceFolder, fileNamePattern, destinationFolder) {
+    try {
+      // Find the front sheet file using the provided pattern
+      const frontSheetFile = DriveManager.handleSingleEntryFileArray(
+        DriveManager.findFilesBySubstring(
+          sourceFolder, 
+          fileNamePattern, 
+          false, 
+          ["application/pdf"], 
+          "contains"
+        )
+      );
+      
+      if (!frontSheetFile) {
+        console.warn(`Front sheet matching pattern "${fileNamePattern}" not found in folder ${sourceFolder.getName()}`);
+        return null;
+      }
+      
+      // Copy the file to the destination folder
+      const newFile = frontSheetFile.makeCopy(destinationFolder); //No point in using `DriveManager` for a simple copy operation
+      console.log(`Copied front sheet ${frontSheetFile.getName()} to ${destinationFolder.getName()}`);
+      
+      return newFile;
+    } catch (e) {
+      console.error(`Error copying front sheet: ${e.message}`);
+      return null;
+    }
+  }
+
+  /**
    * Merges PDFs for each student folder based on the prefix sheet
    * @param {Array} studentData - Student data from spreadsheet
    * @param {string} destinationFolderId - ID of the destination folder
@@ -603,7 +640,7 @@ class PDFMerger {
 
           // Create a folder in the parent folder
           const destFolder = DriveApp.getFolderById(destinationFolderId);
-          const mergedPDFsFolder = DriveManager.createFolderInParentFolder(
+          const mergedPDFsFolder = DriveManager.createFolder(
             destFolder,
             destinationFolderName || "MergedPDFs"
           );
@@ -611,6 +648,9 @@ class PDFMerger {
           console.log(
             `Processing student: ${studentName}, creating merged PDFs in folder: ${mergedPDFsFolder.getName()}`
           );
+
+          // Copy front sheet using the helper method
+          this.copyFrontSheet(sourceFolder, destinationFolderName, mergedPDFsFolder);
 
           // Run the merge operation for this student's folder
           const mergeResult = await this.mergePDFsFromPrefixSheet(
