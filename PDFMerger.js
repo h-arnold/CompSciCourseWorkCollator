@@ -490,7 +490,7 @@ class PDFMerger {
               zipOutputFileName
             );
             zipFiles.push(copiedZip);
-            console.log(`Copied zip file: ${zipFile.getName()} to ${zipOutputFileName}`);
+            console.log(`Copied zip file: ${zipFiles[0].getName()} to ${zipOutputFileName}`);
           }
         } catch (e) {
           console.error(`Error copying zip file: ${e.message}`);
