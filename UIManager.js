@@ -7,16 +7,22 @@ class UIManager {
      */
     static createMenu() {
       const ui = SpreadsheetApp.getUi();
-      ui.createMenu('Folder Populator')
-        .addItem("1. Get names and IDs", "runScript")
-        .addItem("2. Copy marksheets and declarations", "populateFoldersWithTemplates")
-        .addItem("3. Copy coursework submissions", "populateFolders")
-        .addItem("4. ICT: Setup Student Info headers", "setupICTStudentInfoSheet")
-        .addItem("5. ICT: Fetch roster to Student Info", "fetchICTRosterToSheet")
-        .addItem("6. ICT: Create folders from Student Info", "createICTFoldersFromSheet")
-        .addItem("7. ICT: Collate content creation", "runICTContentCreationCollation")
-        .addItem("8. Process declarations only", "processDeclarationsOnly")
-        .addItem("9. Merge PDFs for all students", "mergeAllStudentPDFs")
+      const computerScienceMenu = ui.createMenu('Computer Science')
+        .addItem("Setup class and student folders", "runScript")
+        .addItem("Copy marksheets and declarations", "populateFoldersWithTemplates")
+        .addItem("Copy coursework submissions", "populateFolders")
+        .addItem("Process declarations only", "processDeclarationsOnly")
+        .addItem("Merge PDFs for all students", "mergeAllStudentPDFs");
+
+      const ictMenu = ui.createMenu('ICT Content Creation')
+        .addItem("Setup Student Info headers", "setupICTStudentInfoSheet")
+        .addItem("Fetch roster to Student Info", "fetchICTRosterToSheet")
+        .addItem("Create folders from Student Info", "createICTFoldersFromSheet")
+        .addItem("Collate assignment content", "runICTContentCreationCollation");
+
+      ui.createMenu('Coursework Collator')
+        .addSubMenu(computerScienceMenu)
+        .addSubMenu(ictMenu)
         .addToUi();
     }
     
