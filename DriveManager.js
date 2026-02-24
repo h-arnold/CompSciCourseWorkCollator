@@ -182,11 +182,20 @@ class DriveManager {
      */
     static copyFile(file, folder, prependString) {
       file = this.handleSingleEntryFileArray(file);
-      const newFileName = `${prependString}_${file.getName()}`;
+      const newFileName = prependString ? `${prependString}_${file.getName()}` : file.getName();
       if (this.checkAndHandleExistingFile(folder, newFileName)) {
         file.makeCopy(newFileName, folder);
         console.log(`File "${file.getName()}" copied as "${newFileName}".`);
       }
+    }
+
+    /**
+     * Copies the given file to the specified folder preserving its original filename.
+     * @param {File} file - The Drive file to copy
+     * @param {Folder} folder - The destination folder
+     */
+    static copyFilePreserveName(file, folder) {
+      return this.copyFile(file, folder, '');
     }
     
     /**
@@ -212,6 +221,16 @@ class DriveManager {
         console.log(`Document "${file.getName()}" (converted to PDF) copied as "${newFilename}".`);
       }
       return file;
+    }
+
+    /**
+     * Converts a Google Docs file to PDF and copies it preserving its base filename.
+     * @param {File} file - The Google Docs file to convert
+     * @param {Folder} folder - The destination folder
+     * @returns {File|null} The created PDF file object or null
+     */
+    static copyGoogleDocAsPdfPreserveName(file, folder) {
+      return this.copyGoogleDocAsPdf(file, folder, '');
     }
     
     /**

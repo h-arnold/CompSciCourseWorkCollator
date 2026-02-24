@@ -162,6 +162,194 @@ class FolderPopulator {
       });
     });
   }
+
+  /**
+   * Runs the ICT Content Creation collation workflow.
+   * Creates student folders based on Student Info sheet and collates assignment attachments.
+   */
+  runICTContentCreationCollation() {
+    const classroomUrlResponse = UIManager.promptUser(
+      'ICT: Enter Google Classroom URL',
+      'Please enter the URL of the Google Classroom course.'
+    );
+
+    if (classroomUrlResponse.getSelectedButton() !== SpreadsheetApp.getUi().Button.OK) {
+      UIManager.showAlert('Operation canceled.');
+      return;
+    }
+
+    const classroomUrl = classroomUrlResponse.getResponseText().trim();
+    const classroom = Classroom.Courses;
+    const courses = classroom.list().courses || [];
+    const course = courses.find(c => c.alternateLink === classroomUrl);
+    const courseId = course ? course.id : null;
+
+    if (!courseId) {
+      UIManager.showAlert('Invalid Google Classroom URL or access denied.');
+      return;
+    }
+
+    const rootFolderResponse = UIManager.promptUser(
+      'ICT: Enter Root Folder ID',
+      'Please enter the root folder ID where ICT student folders should be created.'
+    );
+
+    if (rootFolderResponse.getSelectedButton() !== SpreadsheetApp.getUi().Button.OK) {
+      UIManager.showAlert('Operation canceled.');
+      return;
+    }
+
+    const assignmentTitleResponse = UIManager.promptUser(
+      'ICT: Enter Assignment Title',
+      'Please enter the Google Classroom assignment title to collate attachments from.'
+    );
+
+    if (assignmentTitleResponse.getSelectedButton() !== SpreadsheetApp.getUi().Button.OK) {
+      UIManager.showAlert('Operation canceled.');
+      return;
+    }
+
+    const rootFolderId = rootFolderResponse.getResponseText().trim();
+    const assignmentTitle = assignmentTitleResponse.getResponseText().trim();
+
+    const { studentSheet, courseSheet } = SpreadsheetManager.getSpreadsheetSheets();
+    const ictStudents = SpreadsheetManager.getICTStudentsFromSheet(studentSheet);
+
+    if (ictStudents.length === 0) {
+      UIManager.showAlert('No ICT students found in Student Info sheet.');
+      return;
+    }
+
+    courseSheet.clear();
+    courseSheet.appendRow(['Course ID:', courseId]);
+
+    this.createICTStudentFolders(rootFolderId, studentSheet, ictStudents);
+    const result = this.processICTAssignmentAttachments(courseId, assignmentTitle, ictStudents);
+
+    UIManager.showAlert(
+      `ICT collation complete.\nProcessed students: ${result.processedStudents}\nCopied files: ${result.copiedFiles}\nSkipped (no sheet match): ${result.unmatchedSubmissions}\nSkipped (no submissions): ${result.studentsWithoutSubmissions}`
+    );
+  }
+
+  /**
+   * Initializes Student Info sheet for ICT collation.
+   */
+  setupICTStudentInfoSheet() {
+    const { studentSheet } = SpreadsheetManager.getSpreadsheetSheets();
+    const ui = SpreadsheetApp.getUi();
+    const response = ui.alert(
+      'ICT Student Info setup',
+      'Do you want to clear existing Student Info data before writing ICT headers?',
+      ui.ButtonSet.YES_NO_CANCEL
+    );
+
+    if (response === ui.Button.CANCEL) {
+      UIManager.showAlert('Operation canceled.');
+      return;
+    }
+
+    SpreadsheetManager.initializeICTStudentInfoSheet(studentSheet, response === ui.Button.YES);
+    UIManager.showAlert('Student Info sheet is ready with ICT headers: Student ID, Name, User ID, Folder ID.');
+  }
+
+  /**
+   * Creates ICT student folders using the format: "studentId studentName".
+   * @param {string} rootFolderId - Root Drive folder ID
+   * @param {Object} studentSheet - Student Info sheet
+   * @param {Object[]} students - ICT student records
+   */
+  createICTStudentFolders(rootFolderId, studentSheet, students) {
+    const rootFolder = DriveApp.getFolderById(rootFolderId);
+
+    students.forEach(student => {
+      if (!student.studentId || !student.name) {
+        console.warn(`Skipping row ${student.rowIndex} due to missing Student ID or Name.`);
+        return;
+      }
+
+      const folderName = `${student.studentId} ${student.name}`;
+      const folder = DriveManager.createFolder(rootFolder, folderName);
+      student.folderId = folder.getId();
+    });
+
+    SpreadsheetManager.updateICTFolderIds(studentSheet, students);
+  }
+
+  /**
+   * Processes ICT assignment attachments for sheet-listed students.
+   * Copies all Drive attachments preserving names, converting Google Docs to PDF.
+   * @param {string} courseId - Classroom course ID
+   * @param {string} assignmentTitle - Classroom assignment title
+   * @param {Object[]} students - ICT student records
+   * @returns {Object} Summary stats
+   */
+  processICTAssignmentAttachments(courseId, assignmentTitle, students) {
+    const assignmentId = ClassroomManager.getAssignmentId(courseId, assignmentTitle);
+
+    if (!assignmentId) {
+      throw new Error('Invalid Google Classroom assignment title or access denied.');
+    }
+
+    let processedStudents = 0;
+    let copiedFiles = 0;
+    let studentsWithoutSubmissions = 0;
+    let unmatchedSubmissions = 0;
+
+    students.forEach(student => {
+      if (!student.userId || !student.folderId) {
+        console.warn(`Skipping student ${student.name} due to missing User ID or Folder ID.`);
+        unmatchedSubmissions++;
+        return;
+      }
+
+      let submissions = [];
+      try {
+        submissions = ClassroomManager.getStudentSubmissions(courseId, assignmentId, student.userId) || [];
+      } catch (error) {
+        console.error(`Unable to fetch submissions for ${student.name}: ${error.message}`);
+        return;
+      }
+
+      if (submissions.length === 0) {
+        studentsWithoutSubmissions++;
+        return;
+      }
+
+      const destinationFolder = DriveApp.getFolderById(student.folderId);
+      processedStudents++;
+
+      submissions.forEach(submission => {
+        const attachments = submission.assignmentSubmission?.attachments || [];
+
+        attachments.forEach(attachment => {
+          if (!attachment.driveFile?.id) {
+            return;
+          }
+
+          try {
+            const file = DriveApp.getFileById(attachment.driveFile.id);
+
+            if (DriveManager.isGoogleDoc(file)) {
+              DriveManager.copyGoogleDocAsPdfPreserveName(file, destinationFolder);
+            } else {
+              DriveManager.copyFilePreserveName(file, destinationFolder);
+            }
+
+            copiedFiles++;
+          } catch (error) {
+            console.error(`Error copying attachment ${attachment.driveFile.id} for ${student.name}: ${error.message}`);
+          }
+        });
+      });
+    });
+
+    return {
+      processedStudents,
+      copiedFiles,
+      studentsWithoutSubmissions,
+      unmatchedSubmissions
+    };
+  }
   
   /**
    * Populates student folders with template files
@@ -182,7 +370,7 @@ class FolderPopulator {
     const studentData = studentSheet.getDataRange().getValues();
     // Get template file IDs from the "Course Info" sheet, starting from the third row
     const templateFileIds = courseSheet.getRange(3, 1, courseSheet.getLastRow() - 2, 1)
-      .getValues().flat().filter(id => id);
+      .getValues().flat().filter(Boolean);
   
     // Check if there are any template file IDs
     if (templateFileIds.length === 0) {
@@ -240,6 +428,24 @@ function populateFolders() {
 function populateFoldersWithTemplates() {
   const folderPopulator = new FolderPopulator();
   folderPopulator.populateFoldersWithTemplates();
+}
+
+function runICTContentCreationCollation() {
+  try {
+    const folderPopulator = new FolderPopulator();
+    folderPopulator.runICTContentCreationCollation();
+  } catch (e) {
+    UIManager.showAlert(`ICT collation failed: ${e.message}`);
+  }
+}
+
+function setupICTStudentInfoSheet() {
+  try {
+    const folderPopulator = new FolderPopulator();
+    folderPopulator.setupICTStudentInfoSheet();
+  } catch (e) {
+    UIManager.showAlert(`ICT sheet setup failed: ${e.message}`);
+  }
 }
 
 /**

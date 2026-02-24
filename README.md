@@ -1,18 +1,52 @@
-Below is an updated README with a new section near the top that explains a typical workflow for using the script.
-
----
-
 # Folder Populator for A-Level Computer Science Coursework
 
 This Google Apps Script automates tedious administrative tasks for organising A-Level Computer Science coursework. It interacts with Google Classroom and Google Drive to create individual student folders, copy essential template files (such as the marking grid and declaration form) into each folder, and retrieve coursework submissions—either as PDFs or as Google Docs converted to PDFs.
 
 ## Overview
 
-The script provides three main functions, accessible via a custom menu in your Google Spreadsheet:
+The script provides several main functions, accessible via a custom menu in your Google Spreadsheet:
 
 - **Get Names and IDs:** Retrieves members from a Google Classroom course, creates a folder for each (under a specified root folder), and records their details in a "Student Info" sheet.
 - **Copy Marksheets and Declarations:** Copies template files (e.g. marking grid and declaration form) into each student’s folder, prepending filenames with the student’s initials.
 - **Copy Coursework Submissions:** Pulls coursework attachments from a Google Classroom assignment. It copies PDFs directly or converts Google Docs to PDFs before placing them in the corresponding student folders.
+
+## ICT Content Creation Workflow
+
+The script now includes an ICT-specific menu action:
+
+- **ICT: Setup Student Info headers**
+- **ICT: Collate content creation**
+
+This workflow is designed for a simpler collation process:
+
+1. Read students from the **Student Info** sheet.
+2. Create one folder per student named:
+   - `Student ID Name`
+3. Pull all Drive attachments from a chosen Google Classroom assignment.
+4. Copy attachments into each student folder:
+   - Keep original filenames unchanged.
+   - Convert Google Docs to PDF using the same base filename.
+
+### Required Student Info headers for ICT
+
+The **Student Info** sheet must include these columns (case-insensitive):
+
+- `Student ID`
+- `Name`
+- `User ID` (Google Classroom user ID used for cross-check and submission lookup)
+
+`Folder ID` is optional; if missing, the script will add/populate it.
+
+### Running ICT collation
+
+1. (Optional) From the menu select **4. ICT: Setup Student Info headers** to create a clean header row.
+2. Populate **Student Info** with `Student ID`, `Name`, and `User ID`.
+3. From the menu select **5. ICT: Collate content creation**.
+4. Enter:
+   - Classroom course URL
+   - Root Drive folder ID
+   - Assignment title
+5. The script creates/updates student folders and copies assignment attachments.
 
 ## Typical Workflow
 
@@ -105,7 +139,3 @@ Feel free to open issues or submit pull requests with suggestions or improvement
 ## License
 
 This project is licensed under the MIT License.
-
----
-
-This README should provide comprehensive guidance on setting up, configuring, and using the script to streamline your coursework administration tasks. Enjoy your more efficient workflow!
