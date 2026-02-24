@@ -15,15 +15,18 @@ The script provides several main functions, accessible via a custom menu in your
 The script now includes an ICT-specific menu action:
 
 - **ICT: Setup Student Info headers**
+- **ICT: Fetch roster to Student Info**
+- **ICT: Create folders from Student Info**
 - **ICT: Collate content creation**
 
-This workflow is designed for a simpler collation process:
+This workflow is designed as a staged process:
 
-1. Read students from the **Student Info** sheet.
-2. Create one folder per student named:
+1. Fetch `Name` and `User ID` from Classroom into **Student Info**.
+2. Fill in `Student ID` values manually.
+3. Create one folder per student named:
    - `Student ID Name`
-3. Pull all Drive attachments from a chosen Google Classroom assignment.
-4. Copy attachments into each student folder:
+4. Pull all Drive attachments from a chosen Google Classroom assignment.
+5. Copy attachments into each student folder:
    - Keep original filenames unchanged.
    - Convert Google Docs to PDF using the same base filename.
 
@@ -40,13 +43,14 @@ The **Student Info** sheet must include these columns (case-insensitive):
 ### Running ICT collation
 
 1. (Optional) From the menu select **4. ICT: Setup Student Info headers** to create a clean header row.
-2. Populate **Student Info** with `Student ID`, `Name`, and `User ID`.
-3. From the menu select **5. ICT: Collate content creation**.
-4. Enter:
+2. From the menu select **5. ICT: Fetch roster to Student Info**.
+3. Fill in `Student ID` values in **Student Info**.
+4. From the menu select **6. ICT: Create folders from Student Info** and enter the root folder ID.
+5. From the menu select **7. ICT: Collate content creation**.
+6. Enter:
    - Classroom course URL
-   - Root Drive folder ID
    - Assignment title
-5. The script creates/updates student folders and copies assignment attachments.
+7. The script copies assignment attachments into folders listed in `Folder ID`.
 
 ## Typical Workflow
 

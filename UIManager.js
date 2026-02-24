@@ -12,9 +12,11 @@ class UIManager {
         .addItem("2. Copy marksheets and declarations", "populateFoldersWithTemplates")
         .addItem("3. Copy coursework submissions", "populateFolders")
         .addItem("4. ICT: Setup Student Info headers", "setupICTStudentInfoSheet")
-        .addItem("5. ICT: Collate content creation", "runICTContentCreationCollation")
-        .addItem("6. Process declarations only", "processDeclarationsOnly")
-        .addItem("7. Merge PDFs for all students", "mergeAllStudentPDFs")
+        .addItem("5. ICT: Fetch roster to Student Info", "fetchICTRosterToSheet")
+        .addItem("6. ICT: Create folders from Student Info", "createICTFoldersFromSheet")
+        .addItem("7. ICT: Collate content creation", "runICTContentCreationCollation")
+        .addItem("8. Process declarations only", "processDeclarationsOnly")
+        .addItem("9. Merge PDFs for all students", "mergeAllStudentPDFs")
         .addToUi();
     }
     

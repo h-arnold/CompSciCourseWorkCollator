@@ -6,6 +6,18 @@ class FolderPopulator {
   constructor() {
     // Initialize managers as needed
   }
+
+  /**
+   * Resolves Classroom course ID from the course URL.
+   * @param {string} classroomUrl - Classroom alternateLink URL
+   * @returns {string|null} course ID or null
+   */
+  getCourseIdFromUrl(classroomUrl) {
+    const classroom = Classroom.Courses;
+    const courses = classroom.list().courses || [];
+    const course = courses.find(c => c.alternateLink === classroomUrl);
+    return course ? course.id : null;
+  }
   
   /**
    * Populates sheets with classroom members
@@ -179,23 +191,10 @@ class FolderPopulator {
     }
 
     const classroomUrl = classroomUrlResponse.getResponseText().trim();
-    const classroom = Classroom.Courses;
-    const courses = classroom.list().courses || [];
-    const course = courses.find(c => c.alternateLink === classroomUrl);
-    const courseId = course ? course.id : null;
+    const courseId = this.getCourseIdFromUrl(classroomUrl);
 
     if (!courseId) {
       UIManager.showAlert('Invalid Google Classroom URL or access denied.');
-      return;
-    }
-
-    const rootFolderResponse = UIManager.promptUser(
-      'ICT: Enter Root Folder ID',
-      'Please enter the root folder ID where ICT student folders should be created.'
-    );
-
-    if (rootFolderResponse.getSelectedButton() !== SpreadsheetApp.getUi().Button.OK) {
-      UIManager.showAlert('Operation canceled.');
       return;
     }
 
@@ -209,7 +208,6 @@ class FolderPopulator {
       return;
     }
 
-    const rootFolderId = rootFolderResponse.getResponseText().trim();
     const assignmentTitle = assignmentTitleResponse.getResponseText().trim();
 
     const { studentSheet, courseSheet } = SpreadsheetManager.getSpreadsheetSheets();
@@ -223,11 +221,44 @@ class FolderPopulator {
     courseSheet.clear();
     courseSheet.appendRow(['Course ID:', courseId]);
 
-    this.createICTStudentFolders(rootFolderId, studentSheet, ictStudents);
     const result = this.processICTAssignmentAttachments(courseId, assignmentTitle, ictStudents);
 
     UIManager.showAlert(
       `ICT collation complete.\nProcessed students: ${result.processedStudents}\nCopied files: ${result.copiedFiles}\nSkipped (no sheet match): ${result.unmatchedSubmissions}\nSkipped (no submissions): ${result.studentsWithoutSubmissions}`
+    );
+  }
+
+  /**
+   * Fetches ICT classroom roster (Name + User ID) into Student Info.
+   */
+  fetchICTRosterToSheet() {
+    const classroomUrlResponse = UIManager.promptUser(
+      'ICT: Enter Google Classroom URL',
+      'Please enter the URL of the Google Classroom course.'
+    );
+
+    if (classroomUrlResponse.getSelectedButton() !== SpreadsheetApp.getUi().Button.OK) {
+      UIManager.showAlert('Operation canceled.');
+      return;
+    }
+
+    const classroomUrl = classroomUrlResponse.getResponseText().trim();
+    const courseId = this.getCourseIdFromUrl(classroomUrl);
+
+    if (!courseId) {
+      UIManager.showAlert('Invalid Google Classroom URL or access denied.');
+      return;
+    }
+
+    const { studentSheet, courseSheet } = SpreadsheetManager.getSpreadsheetSheets();
+    const members = ClassroomManager.getClassroomMembers(courseId);
+
+    SpreadsheetManager.writeICTMembersToSheet(members, studentSheet);
+    courseSheet.clear();
+    courseSheet.appendRow(['Course ID:', courseId]);
+
+    UIManager.showAlert(
+      `ICT roster fetched for ${members.length} students. Add Student ID values, then run "ICT: Create folders from Student Info".`
     );
   }
 
@@ -259,6 +290,18 @@ class FolderPopulator {
    * @param {Object[]} students - ICT student records
    */
   createICTStudentFolders(rootFolderId, studentSheet, students) {
+    const { missingRows, duplicateIds } = SpreadsheetManager.validateICTStudentIds(students);
+
+    if (duplicateIds.length > 0) {
+      UIManager.showAlert(`Duplicate Student ID values found: ${duplicateIds.join(', ')}. Please correct and retry.`);
+      return;
+    }
+
+    if (missingRows.length > 0) {
+      UIManager.showAlert(`Missing Student ID in rows: ${missingRows.join(', ')}. Please fill these values and retry.`);
+      return;
+    }
+
     const rootFolder = DriveApp.getFolderById(rootFolderId);
 
     students.forEach(student => {
@@ -273,6 +316,33 @@ class FolderPopulator {
     });
 
     SpreadsheetManager.updateICTFolderIds(studentSheet, students);
+    UIManager.showAlert('ICT student folders have been created/updated and Folder ID values were written to Student Info.');
+  }
+
+  /**
+   * Runs folder creation for ICT students from Student Info sheet.
+   */
+  createICTFoldersFromSheet() {
+    const rootFolderResponse = UIManager.promptUser(
+      'ICT: Enter Root Folder ID',
+      'Please enter the root folder ID where ICT student folders should be created.'
+    );
+
+    if (rootFolderResponse.getSelectedButton() !== SpreadsheetApp.getUi().Button.OK) {
+      UIManager.showAlert('Operation canceled.');
+      return;
+    }
+
+    const rootFolderId = rootFolderResponse.getResponseText().trim();
+    const { studentSheet } = SpreadsheetManager.getSpreadsheetSheets();
+    const ictStudents = SpreadsheetManager.getICTStudentsFromSheet(studentSheet);
+
+    if (ictStudents.length === 0) {
+      UIManager.showAlert('No ICT students found in Student Info sheet.');
+      return;
+    }
+
+    this.createICTStudentFolders(rootFolderId, studentSheet, ictStudents);
   }
 
   /**
@@ -436,6 +506,24 @@ function runICTContentCreationCollation() {
     folderPopulator.runICTContentCreationCollation();
   } catch (e) {
     UIManager.showAlert(`ICT collation failed: ${e.message}`);
+  }
+}
+
+function fetchICTRosterToSheet() {
+  try {
+    const folderPopulator = new FolderPopulator();
+    folderPopulator.fetchICTRosterToSheet();
+  } catch (e) {
+    UIManager.showAlert(`ICT roster fetch failed: ${e.message}`);
+  }
+}
+
+function createICTFoldersFromSheet() {
+  try {
+    const folderPopulator = new FolderPopulator();
+    folderPopulator.createICTFoldersFromSheet();
+  } catch (e) {
+    UIManager.showAlert(`ICT folder creation failed: ${e.message}`);
   }
 }
 

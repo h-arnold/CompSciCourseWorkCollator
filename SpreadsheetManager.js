@@ -5,6 +5,24 @@ const ICT_STUDENT_HEADERS = ["Student ID", "Name", "User ID", "Folder ID"];
  */
 class SpreadsheetManager {
 
+  /**
+   * Clears and writes headers/rows to a sheet.
+   * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
+   * @param {string[]} headers
+   * @param {Array[]} rows
+   * @param {boolean} clearSheet
+   */
+  static writeRowsWithHeaders(sheet, headers, rows, clearSheet = true) {
+    if (clearSheet) {
+      sheet.clear();
+    }
+
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    if (rows.length > 0) {
+      sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
+    }
+  }
+
 
   /**
    * Writes the member data to a Google Sheet
@@ -14,15 +32,24 @@ class SpreadsheetManager {
    */
   static writeMembersToSheet(members, sheet, rootFolderId) {
     const headers = ["Name", "User ID", "Folder ID"];
-    sheet.appendRow(headers);
-  
     const rootFolder = DriveApp.getFolderById(rootFolderId);
-    members.forEach(member => {
+    const rows = members.map(member => {
       const folder = DriveManager.createFolder(rootFolder, member.name);
       const folderId = folder.getId();
-      const row = [member.name, member.userId, folderId];
-      sheet.appendRow(row);
+      return [member.name, member.userId, folderId];
     });
+
+    this.writeRowsWithHeaders(sheet, headers, rows, true);
+  }
+
+  /**
+   * Writes ICT classroom members to Student Info without creating folders.
+   * @param {Object[]} members - Classroom members
+   * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet - Student Info sheet
+   */
+  static writeICTMembersToSheet(members, sheet) {
+    const rows = members.map(member => ['', member.name, member.userId, '']);
+    this.writeRowsWithHeaders(sheet, ICT_STUDENT_HEADERS, rows, true);
   }
   
   /**
@@ -124,6 +151,27 @@ class SpreadsheetManager {
       sheet.clear();
     }
 
-    sheet.getRange(1, 1, 1, this.ICT_STUDENT_HEADERS.length).setValues([this.ICT_STUDENT_HEADERS]);
+    sheet.getRange(1, 1, 1, ICT_STUDENT_HEADERS.length).setValues([ICT_STUDENT_HEADERS]);
+  }
+
+  /**
+   * Validates ICT student IDs for folder creation.
+   * @param {Object[]} students - ICT student records
+   * @returns {{missingRows:number[], duplicateIds:string[]}}
+   */
+  static validateICTStudentIds(students) {
+    const missingRows = [];
+    const idCounts = {};
+
+    students.forEach(student => {
+      if (!student.studentId) {
+        missingRows.push(student.rowIndex);
+        return;
+      }
+      idCounts[student.studentId] = (idCounts[student.studentId] || 0) + 1;
+    });
+
+    const duplicateIds = Object.keys(idCounts).filter(studentId => idCounts[studentId] > 1);
+    return { missingRows, duplicateIds };
   }
 }

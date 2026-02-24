@@ -35,8 +35,17 @@ class ClassroomManager {
    */
   static getClassroomMembers(courseId) {
     const classroomService = Classroom.Courses.Students;
-    const students = classroomService.list(courseId).students;
-  
+    const students = [];
+    let pageToken = null;
+
+    do {
+      const params = pageToken ? { pageToken } : {};
+      const response = classroomService.list(courseId, params);
+      const pageStudents = (response && response.students) ? response.students : [];
+      students.push(...pageStudents);
+      pageToken = response && response.nextPageToken ? response.nextPageToken : null;
+    } while (pageToken);
+
     const members = students.map(member => ({
       name: member.profile.name.fullName,
       userId: member.userId
