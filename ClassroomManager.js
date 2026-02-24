@@ -41,9 +41,9 @@ class ClassroomManager {
     do {
       const params = pageToken ? { pageToken } : {};
       const response = classroomService.list(courseId, params);
-      const pageStudents = (response && response.students) ? response.students : [];
+      const pageStudents = response?.students || [];
       students.push(...pageStudents);
-      pageToken = response && response.nextPageToken ? response.nextPageToken : null;
+      pageToken = response?.nextPageToken || null;
     } while (pageToken);
 
     const members = students.map(member => ({
